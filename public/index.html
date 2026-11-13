@@ -2,7 +2,9 @@
 <html lang="bn">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f8f63" />
+  <link rel="icon" href="logo.png" />
   <title>TopPay Smart Decision Assistant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
@@ -11,9 +13,9 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">✔</span>
+      <img class="logo" src="logo.png" alt="TopPay" />
       <div>
-        <h1>TopPay Smart Decision Assistant</h1>
+        <h1>TopPay Decision Assistant</h1>
         <p>Customer Review Policy · effective 8 November</p>
       </div>
     </div>
@@ -27,6 +29,25 @@
   <div class="layout">
     <!-- ================= FORM ================= -->
     <form id="form" class="formcol" autocomplete="off">
+      <section class="card verify">
+        <h2><span class="num">🔍</span> যাচাই করুন</h2>
+        <div class="linkgrid">
+          <a class="linkbtn" href="https://www.epassport.gov.bd/applications/application-form/1039141817/previous-passport" target="_blank" rel="noopener noreferrer"><b>🪪 NID যাচাই</b><small>e-Passport portal</small></a>
+          <a class="linkbtn" href="https://support.oppo.com/cn/check/" target="_blank" rel="noopener noreferrer"><b>📱 IMEI যাচাই</b><small>OPPO support</small></a>
+          <a class="linkbtn" href="https://bdbirthcertificatecheck.com/" target="_blank" rel="noopener noreferrer"><b>👶 জন্ম নিবন্ধন যাচাই</b><small>bdbirthcertificatecheck</small></a>
+        </div>
+        <div class="grid">
+          <label>NID নম্বর (format check)
+            <input type="text" id="nidNo" inputmode="numeric" maxlength="17" placeholder="10 / 13 / 17 digit" />
+            <small id="nidHint"></small>
+          </label>
+          <label>IMEI নম্বর (format check)
+            <input type="text" id="imeiNo" inputmode="numeric" maxlength="15" placeholder="15 digit" />
+            <small id="imeiHint"></small>
+          </label>
+        </div>
+      </section>
+
       <section class="card">
         <h2><span class="num">১</span> মূল তথ্য</h2>
         <div class="grid">
@@ -53,7 +74,7 @@
           </label>
           <label>সবচেয়ে ভালো ১ মাসের transaction
             <input type="number" name="tx_1_month" min="0" inputmode="numeric" />
-            <small>Cash in + cash out মিলিয়ে, শেষ ৭-১০ দিন বাদে</small>
+            <small>Cash in + cash out মিলিয়ে, আবেদনের আগের শেষ ৭ দিন বাদে</small>
           </label>
           <label>৩ মাসের মোট transaction
             <input type="number" name="tx_3_month" min="0" inputmode="numeric" />
@@ -198,7 +219,7 @@
     <aside id="resultcol" class="resultcol">
       <div id="empty" class="card empty">
         <div class="big">📋</div>
-        <p>বাঁদিকের ফর্ম পূরণ করুন।<br>লেখার সাথে সাথেই এখানে সিদ্ধান্ত দেখাবে।</p>
+        <p>ফর্ম পূরণ করুন।<br>লেখার সাথে সাথেই এখানে সিদ্ধান্ত দেখাবে।</p>
       </div>
 
       <div id="result" class="hidden">

@@ -86,7 +86,7 @@ FIELDS = [
 ] + [f for f, _ in REJECT_FLAGS]
 
 # ------------------------------------------ official Bangla BP messages (returns)
-T_TX_MONTH = ("গত ৩ মাসের ({m3}) স্টেটমেন্টে প্রয়োজনীয় লেনদেন পাওয়া যায়নি (আবেদন এর দিন থেকে গত ১০ দিন বাদ এ "
+T_TX_MONTH = ("গত ৩ মাসের ({m3}) স্টেটমেন্টে প্রয়োজনীয় লেনদেন পাওয়া যায়নি (আবেদন এর দিন থেকে গত ৭ দিন বাদ এ "
               "(যে কোন এক মাসে ক্যাশ ইন অথবা ক্যাশ আউট মিলিয়ে ২০০০ টাকা)। অনুগ্রহ করে গ্রাহকের অন্য স্টেটমেন্ট "
               "বিকাশ/নগদ/ব্যাংক স্টেটমেন্ট এই এমাউন্টের লেনদেন আছে সেই স্টেটমেন্ট সাবমিট করুন।")
 T_TX3_15K = ("গত ৩ মাসের স্টেটমেন্টে প্রয়োজনীয় লেনদেন পাওয়া যায়নি (ক্যাশ ইন অথবা ক্যাশ আউট মিলিয়ে ১৫,০০০টাকা, "
@@ -316,11 +316,11 @@ def evaluate_application(data: dict) -> dict:
         else:
             returns.append(_i(
                 f"No month reaches BDT {CONFIG['min_month_tx']:,} (best month ~{floor:,.0f}); "
-                "the last 10 days before application are not counted. Ask for another statement.",
+                "the last 7 days before application are not counted. Ask for another statement.",
                 T_TX_MONTH.format(m3=m3)))
         if _ge(floor, CONFIG["fast_track_tx"]):
             fast_track = True
-    notes.append("Statement must cover the last 3 months; the last 7-10 days before application are not counted.")
+    notes.append("Statement must cover the last 3 months; the last 7 days before application are not counted.")
 
     # ---- 1d. Relationship check during the call (nervous slips get one chance; no prompting)
     rc = d["relation_check"]

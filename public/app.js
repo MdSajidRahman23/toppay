@@ -335,3 +335,39 @@ $("tabCheck").addEventListener("click", () => showTab("check"));
 $("tabLib").addEventListener("click", () => showTab("lib"));
 
 updateVisibility();
+
+
+// ---------- format checks for NID / IMEI (client side only) ----------
+function luhnOk(num) {
+  let sum = 0;
+  for (let i = 0; i < num.length; i++) {
+    let d = Number(num[num.length - 1 - i]);
+    if (i % 2 === 1) { d *= 2; if (d > 9) d -= 9; }
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
+function hint(el, ok, text) {
+  el.textContent = text;
+  el.style.color = ok === null ? "" : ok ? "var(--green)" : "var(--red)";
+}
+$("nidNo").addEventListener("input", (e) => {
+  const v = e.target.value.replace(/\D/g, "");
+  e.target.value = v;
+  if (!v) return hint($("nidHint"), null, "");
+  [10, 13, 17].includes(v.length)
+    ? hint($("nidHint"), true, `✔ ${v.length} digit — format ঠিক আছে (portal-এ যাচাই করুন)`)
+    : hint($("nidHint"), false, `${v.length} digit — NID 10, 13 বা 17 digit হয়`);
+});
+$("imeiNo").addEventListener("input", (e) => {
+  const v = e.target.value.replace(/\D/g, "");
+  e.target.value = v;
+  if (!v) return hint($("imeiHint"), null, "");
+  if (v.length < 15) return hint($("imeiHint"), false, `${v.length}/15 digit`);
+  luhnOk(v)
+    ? hint($("imeiHint"), true, "✔ 15 digit, checksum ঠিক আছে")
+    : hint($("imeiHint"), false, "✖ checksum মেলেনি — IMEI ভুল হতে পারে");
+});
+
+// ---------- mobile: result is a bottom sheet, tap the badge to expand ----------
+$("badge").addEventListener("click", () => $("resultcol").classList.toggle("open"));
