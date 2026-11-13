@@ -1,0 +1,5 @@
+fastapi>=0.110
+uvicorn>=0.29
+# AI text box (optional, currently disabled in the UI) - uncomment to re-enable:
+# google-genai>=1.0
+# openai>=1.50

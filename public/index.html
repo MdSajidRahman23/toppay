@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TopPay Smart Decision Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">✔</span>
+      <div>
+        <h1>TopPay Smart Decision Assistant</h1>
+        <p>Customer Review Policy · effective 8 November</p>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button id="tabCheck" class="tab active" type="button">✅ Check</button>
+      <button id="tabLib" class="tab" type="button">📚 মেসেজ টেমপ্লেট</button>
+      <button id="reset" class="ghost" type="button">🔄 নতুন কেস</button>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <!-- ================= FORM ================= -->
+    <form id="form" class="formcol" autocomplete="off">
+      <section class="card">
+        <h2><span class="num">১</span> মূল তথ্য</h2>
+        <div class="grid">
+          <label>MRP (টাকা)
+            <input type="number" name="mrp" min="0" step="1000" inputmode="numeric" />
+          </label>
+          <div class="agebox">
+            <label>Customer-এর বয়স (বছর)
+              <input type="number" name="customer_age" min="0" step="any" inputmode="decimal" />
+            </label>
+            <div class="dob" data-age="customer_age">
+              <span>অথবা জন্ম তারিখ:</span>
+              <input type="number" class="dob-d" placeholder="দিন" min="1" max="31" inputmode="numeric" />
+              <input type="number" class="dob-m" placeholder="মাস" min="1" max="12" inputmode="numeric" />
+              <input type="number" class="dob-y" placeholder="সাল" min="1900" max="2100" inputmode="numeric" />
+            </div>
+            <small class="agehint"></small>
+          </div>
+          <label>Customer-এর পেশা
+            <select name="profession" data-prof></select>
+          </label>
+          <label>Down payment %
+            <input type="number" name="down_payment_pct" min="0" max="100" inputmode="numeric" />
+          </label>
+          <label>সবচেয়ে ভালো ১ মাসের transaction
+            <input type="number" name="tx_1_month" min="0" inputmode="numeric" />
+            <small>Cash in + cash out মিলিয়ে, শেষ ৭-১০ দিন বাদে</small>
+          </label>
+          <label>৩ মাসের মোট transaction
+            <input type="number" name="tx_3_month" min="0" inputmode="numeric" />
+            <small>১ মাসের টা না জানলে শুধু এটা দিলেও হবে</small>
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2><span class="num">২</span> Guarantor</h2>
+        <div class="grid">
+          <div class="agebox">
+            <label>Guarantor-এর বয়স (বছর)
+              <input type="number" name="guarantor_age" min="0" step="any" inputmode="decimal" />
+            </label>
+            <div class="dob" data-age="guarantor_age">
+              <span>অথবা জন্ম তারিখ:</span>
+              <input type="number" class="dob-d" placeholder="দিন" min="1" max="31" inputmode="numeric" />
+              <input type="number" class="dob-m" placeholder="মাস" min="1" max="12" inputmode="numeric" />
+              <input type="number" class="dob-y" placeholder="সাল" min="1900" max="2100" inputmode="numeric" />
+            </div>
+            <small class="agehint"></small>
+          </div>
+          <label>Guarantor-এর পেশা
+            <select name="guarantor_profession" data-prof></select>
+          </label>
+        </div>
+        <h4>Call-এ সম্পর্ক যাচাই</h4>
+        <label>Customer ও guarantor-এর সম্পর্ক
+          <select name="relation_check">
+            <option value="">—</option>
+            <option value="consistent">ঠিক আছে, দুজনের কথা মিলেছে</option>
+            <option value="pending">ছোট ভুল বলেছে (যেমন চাচাতো ↔ ফুফাতো ভাই) — ভুল শোধরানোর সুযোগ দিন</option>
+            <option value="corrected">ভুলটা নিজে শুধরে নিয়েছে</option>
+            <option value="major">সম্পর্কের তথ্য একদমই মেলেনি</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" name="side_prompting" /> পাশ থেকে কেউ বলে দিচ্ছে</label>
+        <h4>Name mismatch</h4>
+        <label class="check"><input type="checkbox" name="name_mismatch" /> Customer-এর নাম ও statement-এর নাম মেলেনি (Name mismatch)</label>
+        <div class="grid" data-show="mismatch">
+          <label>Guarantor customer-এর কে হয়?
+            <select name="guarantor_relation">
+              <option value="">—</option>
+              <option value="father">বাবা (father)</option>
+              <option value="mother">মা (mother)</option>
+              <option value="brother">ভাই (brother)</option>
+              <option value="sister">বোন (sister)</option>
+              <option value="spouse">স্বামী/স্ত্রী (spouse)</option>
+              <option value="other_relative">অন্য আত্মীয়</option>
+              <option value="friend">বন্ধু</option>
+              <option value="colleague">সহকর্মী</option>
+            </select>
+          </label>
+          <label data-show="spouse">Spouse-এর প্রমাণ
+            <select name="spouse_proof">
+              <option value="">—</option>
+              <option value="marriage_certificate">Marriage certificate</option>
+              <option value="child_nid">Children-এর NID</option>
+              <option value="qr_birth_certificate">QR birth certificate</option>
+              <option value="none">কিছু নেই</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2><span class="num">৩</span> ডকুমেন্ট</h2>
+        <p class="muted" id="docHint">পেশা বেছে নিলে প্রাসঙ্গিক ঘর এখানে আসবে।</p>
+        <div class="grid">
+          <label data-show="jobstu">Job ID card
+            <select name="job_id_status">
+              <option value="">—</option>
+              <option value="original">Original (hard copy)</option>
+              <option value="photocopy">Photocopy / scan</option>
+              <option value="none">ID card নেই</option>
+              <option value="work_photo">Work photo আছে</option>
+              <option value="visiting_card">Visiting card আছে</option>
+            </select>
+          </label>
+          <label data-show="jobstu">মাসিক বেতন
+            <input type="number" name="monthly_salary" min="0" inputmode="numeric" />
+          </label>
+          <label data-show="biz">Trade license
+            <select name="trade_license_status">
+              <option value="">—</option>
+              <option value="valid">Valid</option>
+              <option value="expired">Expired</option>
+              <option value="none">নেই</option>
+            </select>
+          </label>
+          <label data-show="house">মাসিক ভাড়ার আয়
+            <input type="number" name="rental_income" min="0" inputmode="numeric" />
+          </label>
+        </div>
+        <label class="check" data-show="biz"><input type="checkbox" name="has_shop_photos" /> ২টা shop photo আছে (signboard সহ + cash counter-এ owner)</label>
+        <label class="check" data-show="biz"><input type="checkbox" name="statement_in_business_name" /> Statement ব্যবসার নামে</label>
+        <label class="check"><input type="checkbox" name="salary_slip_submitted" /> Salary slip জমা দেওয়া হয়েছে</label>
+        <div class="grid" data-show="slip">
+          <label>Slip কখন জমা হয়েছে?
+            <select name="submission_note">
+              <option value="">—</option>
+              <option value="business_hours">অফিস সময়ে (working day)</option>
+              <option value="evening">সন্ধ্যা / অফিস সময়ের পরে</option>
+              <option value="weekend">সাপ্তাহিক ছুটির দিনে</option>
+              <option value="holiday">সরকারি ছুটির দিনে</option>
+            </select>
+          </label>
+        </div>
+        <label class="check" data-show="slip"><input type="checkbox" name="salary_slip_handwritten" /> Slip-এ হাতে লেখা signature/seal</label>
+      </section>
+
+      <section class="card">
+        <h2><span class="num">৪</span> সন্দেহজনক কিছু আছে?</h2>
+        <h4>Customer</h4>
+        <label class="check"><input type="checkbox" name="is_nid_edited" /> NID edit করা</label>
+        <label class="check"><input type="checkbox" name="nid_parent_names_edited" /> NID-তে বাবা/মায়ের নাম edit করা</label>
+        <label class="check"><input type="checkbox" name="nid_ai_fake" /> NID fake / AI-generated</label>
+        <label class="check"><input type="checkbox" name="nid_not_in_portal" /> NID e-Passport verification portal-এ পাওয়া যায়নি</label>
+        <label class="check"><input type="checkbox" name="nid_photo_mismatch" /> NID-র ছবি on-site ছবির সাথে মেলে না</label>
+        <label class="check"><input type="checkbox" name="voice_mismatch" /> Customer সেজে অন্য কেউ কথা বলেছে</label>
+        <label class="check"><input type="checkbox" name="customer_not_interested" /> Customer আর ফোনটা কিনতে চান না</label>
+        <label class="check"><input type="checkbox" name="no_original_nid" /> Original NID নেই (photocopy) — Return হবে</label>
+        <h4>Guarantor</h4>
+        <label class="check"><input type="checkbox" name="guarantor_nid_edited" /> NID edit করা</label>
+        <label class="check"><input type="checkbox" name="guarantor_nid_not_in_portal" /> NID portal-এ পাওয়া যায়নি (fake)</label>
+        <label class="check"><input type="checkbox" name="guarantor_nid_no_sign" /> NID-তে sign / fingerprint নেই (fake)</label>
+        <label class="check"><input type="checkbox" name="guarantor_nid_ears" /> NID ছবিতে কান দেখা যায় না (edit-এর লক্ষণ)</label>
+        <h4>Statement / Loan</h4>
+        <label class="check"><input type="checkbox" name="is_statement_edited" /> bKash/Nagad statement edit করা / fake</label>
+        <label class="check"><input type="checkbox" name="palmpay_edited" /> PalmPay record edit করা</label>
+        <label class="check"><input type="checkbox" name="palmpay_overdue" /> PalmPay-তে overdue loan আছে</label>
+        <h4>অন্যান্য</h4>
+        <label class="check"><input type="checkbox" name="call_info_unverifiable" /> Call-এর তথ্য ভুল / verify করা যায়নি</label>
+        <label class="check"><input type="checkbox" name="office_phone_number" /> Office/official phone number দিয়েছে</label>
+        <label class="check"><input type="checkbox" name="outside_address_area" /> Residential/permanent address area-র বাইরে</label>
+        <label class="check"><input type="checkbox" name="repeated_resubmit" /> BP বারবার বলার পরেও ডকুমেন্ট না দিয়ে resubmit করেছে</label>
+      </section>
+    </form>
+
+    <!-- ================= RESULT ================= -->
+    <aside id="resultcol" class="resultcol">
+      <div id="empty" class="card empty">
+        <div class="big">📋</div>
+        <p>বাঁদিকের ফর্ম পূরণ করুন।<br>লেখার সাথে সাথেই এখানে সিদ্ধান্ত দেখাবে।</p>
+      </div>
+
+      <div id="result" class="hidden">
+        <div id="badge" class="badge"></div>
+        <div id="fast" class="callout fast hidden"></div>
+
+        <div id="missingBox" class="card hidden"><h3>❓ আরো তথ্য লাগবে</h3><ul id="missing"></ul></div>
+        <div id="rejectsBox" class="card hidden"><h3>⛔ Reject-এর কারণ</h3><ul id="rejects"></ul></div>
+        <div id="returnsBox" class="card hidden"><h3>↩️ Return-এর কারণ</h3><ul id="returns"></ul></div>
+        <div id="actionsBox" class="card hidden"><h3>⚠️ যা করতে হবে</h3><ul id="actions"></ul></div>
+
+        <details class="card"><summary>✔ যা ঠিক আছে</summary><ul id="passed"></ul></details>
+        <p id="notes" class="muted"></p>
+        <button id="copy" class="primary full" type="button">📋 সিদ্ধান্ত copy করুন</button>
+      </div>
+      <p id="err" class="err hidden"></p>
+    </aside>
+  </div>
+
+  <!-- ================= TEMPLATE LIBRARY ================= -->
+  <div id="viewLib" class="lib hidden">
+    <div class="libbar card">
+      <input id="q" type="search" placeholder="খুঁজুন… (যেমন: NID, স্টেটমেন্ট, ট্রেড লাইসেন্স, IMEI)" />
+      <div id="chips" class="chips"></div>
+      <p class="muted">কার্ডে ক্লিক করলেই মেসেজ copy হবে। মাসের নাম আজকের তারিখ অনুযায়ী নিজে থেকে আপডেট হয়।</p>
+    </div>
+    <div id="libList"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
