@@ -11,6 +11,24 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- ================= LOGIN ================= -->
+  <div id="login" class="loginwrap hidden">
+    <form id="loginForm" class="logincard" autocomplete="on">
+      <img class="loginlogo" src="logo.png" alt="TopPay" />
+      <h1>TopPay Decision Assistant</h1>
+      <p class="muted">ব্যবহার করতে Login করুন</p>
+      <label>ID
+        <input type="text" id="lu" autocomplete="username" autocapitalize="none" spellcheck="false" required />
+      </label>
+      <label>Password
+        <input type="password" id="lp" autocomplete="current-password" required />
+      </label>
+      <button class="primary full" type="submit" id="lbtn">Login</button>
+      <p id="lerr" class="err hidden"></p>
+    </form>
+  </div>
+
+  <div id="app" class="hidden">
   <header class="topbar">
     <div class="brand">
       <img class="logo" src="logo.png" alt="TopPay" />
@@ -23,6 +41,7 @@
       <button id="tabCheck" class="tab active" type="button">✅ Check</button>
       <button id="tabLib" class="tab" type="button">📚 মেসেজ টেমপ্লেট</button>
       <button id="reset" class="ghost" type="button">🔄 নতুন কেস</button>
+      <button id="logout" class="ghost" type="button">Logout</button>
     </nav>
   </header>
 
@@ -81,6 +100,7 @@
             <small>১ মাসের টা না জানলে শুধু এটা দিলেও হবে</small>
           </label>
         </div>
+        <label class="check"><input type="checkbox" name="repeat_customer" /> Repeat customer (user tag আছে)</label>
       </section>
 
       <section class="card">
@@ -113,6 +133,10 @@
           </select>
         </label>
         <label class="check"><input type="checkbox" name="side_prompting" /> পাশ থেকে কেউ বলে দিচ্ছে</label>
+        <h4>NID / ফোন নম্বর (ঠিক না হলে Return)</h4>
+        <label class="check"><input type="checkbox" name="nid_name_mismatch" /> Customer-এর নাম ও NID-র নাম মেলেনি</label>
+        <label class="check"><input type="checkbox" name="guarantor_nid_name_mismatch" /> Guarantor-এর নাম ও NID-র নাম মেলেনি</label>
+        <label class="check"><input type="checkbox" name="office_phone_number" /> Office/official phone number দিয়েছে (personal mobile লাগবে)</label>
         <h4>Name mismatch</h4>
         <label class="check"><input type="checkbox" name="name_mismatch" /> Customer-এর নাম ও statement-এর নাম মেলেনি (Name mismatch)</label>
         <div class="grid" data-show="mismatch">
@@ -209,7 +233,6 @@
         <label class="check"><input type="checkbox" name="palmpay_overdue" /> PalmPay-তে overdue loan আছে</label>
         <h4>অন্যান্য</h4>
         <label class="check"><input type="checkbox" name="call_info_unverifiable" /> Call-এর তথ্য ভুল / verify করা যায়নি</label>
-        <label class="check"><input type="checkbox" name="office_phone_number" /> Office/official phone number দিয়েছে</label>
         <label class="check"><input type="checkbox" name="outside_address_area" /> Residential/permanent address area-র বাইরে</label>
         <label class="check"><input type="checkbox" name="repeated_resubmit" /> BP বারবার বলার পরেও ডকুমেন্ট না দিয়ে resubmit করেছে</label>
       </section>
@@ -232,7 +255,11 @@
         <div id="actionsBox" class="card hidden"><h3>⚠️ যা করতে হবে</h3><ul id="actions"></ul></div>
 
         <details class="card"><summary>✔ যা ঠিক আছে</summary><ul id="passed"></ul></details>
-        <p id="notes" class="muted"></p>
+        <div id="internalBox" class="card internal hidden">
+          <h3>🔒 শুধু আমাদের জানার জন্য</h3>
+          <p class="muted">এগুলো BP-কে জানাবেন না।</p>
+          <ul id="notes"></ul>
+        </div>
         <button id="copy" class="primary full" type="button">📋 সিদ্ধান্ত copy করুন</button>
       </div>
       <p id="err" class="err hidden"></p>
@@ -248,6 +275,24 @@
     </div>
     <div id="libList"></div>
   </div>
+
+  <!-- ================= SUGGESTION BOX ================= -->
+  <section class="feedback">
+    <div class="card">
+      <h2>মতামত / Suggestion</h2>
+      <p class="muted">কোনো পরামর্শ বা সমস্যা থাকলে লিখে পাঠান। আপনার email দিন, যেন উত্তর দেওয়া যায়।</p>
+      <label>আপনার email
+        <input type="email" id="fbEmail" placeholder="name@example.com" autocomplete="email" maxlength="120" />
+      </label>
+      <label class="mt">আপনার মেসেজ
+        <textarea id="fbMsg" rows="4" maxlength="2000" placeholder="এখানে লিখুন…"></textarea>
+      </label>
+      <input type="text" id="fbWebsite" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true" />
+      <button id="fbSend" class="primary" type="button">পাঠান</button>
+      <p id="fbStatus" class="muted"></p>
+    </div>
+  </section>
+  </div><!-- /#app -->
 
   <script src="app.js"></script>
 </body>

@@ -30,9 +30,11 @@ CONFIG = {
     # either side; money thresholds get a small BDT margin (not MRP - that is a price, 49,999 stays below 50,000).
     "age_tolerance_years": 0.5,
     "money_tolerance": 100,
+    # MRP below 50,000 with down payment >= 40%: guarantor call can be short (internal note only).
+    "dp40_short_guarantor_call": True,
 }
 
-PROFESSIONS = ["job_holder", "student", "businessman", "rider", "house_owner", "other"]
+PROFESSIONS = ["job_holder", "student", "businessman", "rider", "house_owner", "unemployed", "other"]
 
 NOT_SERVED = {
     "media_press": "Media / press worker",
@@ -71,14 +73,14 @@ REJECT_FLAGS = [
     ("palmpay_overdue", "The customer has an overdue loan on PalmPay."),
     ("repeated_resubmit", "The required documents were requested multiple times and explained over the phone, but the BP kept resubmitting without providing them. Therefore, the application has been rejected."),
     ("call_info_unverifiable", "Call information is incorrect or unverifiable - rejected for suspected fraud."),
-    ("office_phone_number", "Official/office phone number given - a personal mobile number is required."),
 ]
 
 # Every field the form / API may fill. None = not mentioned.
 FIELDS = [
     "mrp", "customer_age", "guarantor_age", "profession", "guarantor_profession",
     "tx_1_month", "tx_3_month", "down_payment_pct", "monthly_salary", "rental_income",
-    "has_original_nid", "name_mismatch",
+    "has_original_nid", "name_mismatch", "nid_name_mismatch", "guarantor_nid_name_mismatch",
+    "office_phone_number", "repeat_customer",
     "guarantor_relation", "spouse_proof", "relation_check", "side_prompting",
     "outside_address_area", "salary_slip_submitted", "salary_slip_handwritten",
     "submission_datetime", "submission_note", "job_id_status", "trade_license_status",
@@ -98,15 +100,20 @@ T_SLIP_BAD = ("কাস্টমার যে স্যালারি স্�
               "এর জন্য যোগাযোগের মাধ্যম, সিল এবং ওই ডিপার্টমেন্ট প্রধানের নাম পদবি সহ সাক্ষর থাকা লাগবে। যেটা এই "
               "স্যালারি স্লিপ এ নেই। তাই অনুগ্রহ করে কাস্টমার এর গত ৩ মাসের ({m3}) PDF বিকাশ/নগদ/ব্যাংক স্টেটমেন্ট "
               "প্রদান করুন।")
+T_NID_NAME_C = "NID অনুযায়ী কাস্টমারের নাম সংশোধন করুন।"          # Issue Template
+T_NID_NAME_G = "NID অনুযায়ী গ্যারান্টরের নাম সংশোধন করুন।"        # Issue Template
+T_OFFICE_PHONE = ("অনুগ্রহ করে কাস্টমারের ব্যক্তিগত মোবাইল নম্বর দিন। অফিস/অফিসিয়াল ফোন নম্বর গ্রহণযোগ্য নয়।")
+T_G_NO_PROF = ("কাস্টমার কিছুই করেন না (বেকার), তাই জামিনদারের পেশা থাকতে হবে। জামিনদারের পেশা নেই। "
+               "অনুগ্রহ করে জামিনদার পরিবর্তন করুন।")
 T_NID_ORIG = "কাস্টমারের Original NID-এর উভয় পাশের ছবি জমা দিন; ফটোকপি/স্ক্যান কপি NID গ্রহণযোগ্য নয়।"
 T_G_NOT_FAMILY = ("জামিনদার রক্তের সম্পর্কযুক্ত বা স্বামী/স্ত্রী নন। অনুগ্রহ করে জামিনদার পরিবর্তন করুন "
-                  "(শুধুমাত্র মা/বাবা/ভাই/বোন/স্বামী/স্ত্রী, বয়স ২১--৬২ বছর)।")
+                  "(শুধুমাত্র মা/বাবা/ভাই/বোন/স্বামী/স্ত্রী, বয়স ২১–৬২ বছর)।")
 T_SPOUSE_PROOF = ("কাস্টমার উনার স্বামীর /স্ত্রীর স্টেটমেন্ট দিয়েছে, তাই প্রয়োজনীয় সম্পর্ক প্রমাণ (ম্যারেজ সার্টিফিকেট / "
                   "সন্তানের জন্ম নিবন্ধন / NID) সাবমিট করতে হবে, যা সাবমিট করা হয়নি অনুগ্রহ করে প্রয়োজনীয় তথ্য সহ "
                   "রিসাবমিট করুন।")
 T_G_AGE_HIGH = ("জামিনদারের বয়স ৬২ বছরের বেশি। অনুগ্রহ করে জামিনদার পরিবর্তন করুন "
-                "(শুধুমাত্র মা/বাবা/ভাই/বোন/স্বামী/স্ত্রী, বয়স ২১--৬২ বছর)।")
-T_G_AGE_LOW = "জামিনদারের বয়স ২১ বছরের কম। অনুগ্রহ করে জামিনদার পরিবর্তন করুন ( বয়স ২১--৬২ বছর)।"
+                "(শুধুমাত্র মা/বাবা/ভাই/বোন/স্বামী/স্ত্রী, বয়স ২১–৬২ বছর)।")
+T_G_AGE_LOW = "জামিনদারের বয়স ২১ বছরের কম। অনুগ্রহ করে জামিনদার পরিবর্তন করুন ( বয়স ২১–৬২ বছর)।"
 T_JOB_ID = ("কাস্টমার এর valid job id সাবমিট করুন। পলিসি অনুযায়ী ৫০ হাজার এর বেশি দামি মোবাইল এর ক্ষেত্রে job holder "
             "হিসেবে আবেদন করলে Job id দিতে হবে।")
 T_LIC_NONE = ("Valid ট্রেড লাইসেন্সের কপি অথবা দোকানের সাইনবোর্ডের ছবি submit করুন। ক্যাশ কাউন্টারে বসা অবস্থায় "
@@ -189,6 +196,13 @@ def _exempt_known(d):
     )
 
 
+def _dp_relax(d) -> bool:
+    """MRP < 50,000 and down payment >= 40%: no need to ask the guarantor many questions (internal)."""
+    mrp, dp = _num(d.get("mrp")), _num(d.get("down_payment_pct"))
+    return bool(CONFIG["dp40_short_guarantor_call"] and mrp is not None and mrp < CONFIG["high_mrp"]
+                and dp is not None and dp >= CONFIG["dp_exempt_pct"])
+
+
 def _outside_hours(dt_str, note):
     """Return a reason string if salary slip was submitted outside working time."""
     if note in ("evening", "weekend", "holiday"):
@@ -218,9 +232,11 @@ def find_missing(d: dict) -> list[tuple[str, str]]:
     if _num(d.get("customer_age")) is None:
         q.append(("customer_age", "Customer-er boyos koto?"))
     if prof is None:
-        q.append(("profession", "Customer-er peshha ki? (job holder / student / businessman / rider / house owner / onno)"))
+        q.append(("profession", "Customer-er peshha ki? (job holder / student / businessman / rider / house owner / beker / onno)"))
     if mrp is None:
         q.append(("mrp", "MRP koto taka?"))
+    if prof == "unemployed" and d.get("guarantor_profession") is None:
+        q.append(("guarantor_profession", "Customer beker - guarantor-er peshha ki? (peshha thakte hobe)"))
     if floor is None or (not _ge(floor, CONFIG["min_month_tx"]) and _num(d.get("tx_1_month")) is None):
         q.append(("tx_1_month", "Shobcheye bhalo 1 mash-er bKash/bank transaction (cash in + cash out) koto?"))
     if d.get("name_mismatch") is True and d.get("guarantor_relation") is None:
@@ -357,6 +373,25 @@ def evaluate_application(data: dict) -> dict:
 
     if d["has_original_nid"] is False:
         returns.append(_i("Customer must provide the ORIGINAL NID (photocopy not accepted for customer).", T_NID_ORIG))
+
+    # ---- 1f. Name vs NID, office phone, unemployed customer -> RETURN
+    if _flag(d["nid_name_mismatch"]):
+        returns.append(_i("Customer name does not match the NID.", T_NID_NAME_C))
+    if _flag(d["guarantor_nid_name_mismatch"]):
+        returns.append(_i("Guarantor name does not match the NID.", T_NID_NAME_G))
+    if _flag(d["office_phone_number"]):
+        returns.append(_i("An official/office phone number was given - a personal mobile number is required.", T_OFFICE_PHONE))
+    if prof == "unemployed":
+        if gprof == "unemployed":
+            returns.append(_i("Customer is unemployed, so the guarantor must have a profession - guarantor has none. "
+                              "Change the guarantor.", T_G_NO_PROF))
+        elif gprof:
+            ok.append("Customer is unemployed, but the guarantor has a profession.")
+    if _dp_relax(d):
+        notes.append("40%+ down payment on MRP below 50,000: no need to ask the guarantor many questions on the call - "
+                     "keep it short (phone reachable, knows the customer). All document checks stay the same.")
+    if _flag(d["repeat_customer"]):
+        notes.append("Repeat customer: do not ask many questions on the call - do a short verification and finish.")
 
     # ---- 2. RETURN (salary slip)
     if _flag(d["salary_slip_submitted"]):

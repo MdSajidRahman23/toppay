@@ -6,7 +6,7 @@ const form = $("form");
 const PROFESSIONS = [
   ["job_holder", "চাকরিজীবী (Job holder)"], ["student", "ছাত্র/ছাত্রী (Student)"],
   ["businessman", "ব্যবসায়ী (Businessman)"], ["rider", "Rider"],
-  ["house_owner", "House owner (বাড়িওয়ালা)"], ["other", "অন্যান্য"],
+  ["house_owner", "House owner (বাড়িওয়ালা)"], ["unemployed", "বেকার / কিছুই করে না"], ["other", "অন্যান্য"],
   ["media_press", "Media / Press"], ["ngo_loan", "Loan-দানকারী NGO কর্মী"],
   ["competitor", "প্রতিযোগী / অন্য mobile installment কর্মী"],
   ["defense", "Defense / Police / Military"], ["lawyer", "Lawyer"],
@@ -22,7 +22,30 @@ const STATUS_CLASS = {
 };
 const STATUS_ICON = { approved: "✅", action: "⚠️", returned: "↩️", rejected: "⛔", need: "❓" };
 
-let lastText = "";   // plain-text summary for the "copy all" button
+let lastText = "";
+
+// ------------------------------------------------------------ login / session
+const TOKEN_KEY = "tp_token";
+const getToken = () => { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } };
+const setToken = (t) => { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch { /* private mode */ } };
+
+function showLogin(msg) {
+  $("app").classList.add("hidden");
+  $("login").classList.remove("hidden");
+  $("lerr").classList.toggle("hidden", !msg);
+  $("lerr").textContent = msg || "";
+}
+function showApp() {
+  $("login").classList.add("hidden");
+  $("app").classList.remove("hidden");
+}
+// fetch with the login token; a 401 sends the user back to the login screen
+async function authFetch(url, opts = {}) {
+  const headers = Object.assign({}, opts.headers, { Authorization: "Bearer " + (getToken() || "") });
+  const r = await fetch(url, Object.assign({}, opts, { headers }));
+  if (r.status === 401) { setToken(null); showLogin("Session শেষ। আবার Login করুন।"); throw new Error("Login দরকার"); }
+  return r;
+}   // plain-text summary for the "copy all" button
 
 // ------------------------------------------------------------ clipboard
 async function copyText(text, btn, done = "✅ Copy হয়েছে") {
@@ -127,6 +150,10 @@ function fillItems(id, items, boxId, copyReason) {
 
     const toCopy = it.msg || (copyReason ? it.text : null);
     if (it.msg) {
+      const lab = document.createElement("div");
+      lab.className = "bplabel";
+      lab.textContent = "BP-কে পাঠানোর মেসেজ";
+      li.appendChild(lab);
       const box = document.createElement("div");
       box.className = "msgbox";
       box.textContent = it.msg;
@@ -161,7 +188,7 @@ function render(res) {
   $("badge").textContent = `${STATUS_ICON[cls]} ${res.status}`;
 
   $("fast").classList.toggle("hidden", !res.fast_track);
-  $("fast").textContent = res.fast_track ? "🚀 " + res.fast_track_msg : "";
+  $("fast").textContent = res.fast_track ? "🔒 Internal · " + res.fast_track_msg : "";
 
   const missing = res.missing.map((m) => ({ text: m[1], msg: null }));
   fillItems("missing", missing, "missingBox", false);
@@ -169,16 +196,15 @@ function render(res) {
   fillItems("returns", res.returns, "returnsBox", false);
   fillItems("actions", res.actions, "actionsBox", false);
   fillStrings("passed", res.passed);
-  $("notes").textContent = res.notes.map((n) => "ℹ️ " + n).join(" ");
+  fillStrings("notes", res.notes);
+  $("internalBox").classList.toggle("hidden", res.notes.length === 0 && !res.fast_track);
 
+  // only official, BP-facing text goes into the copy: reject reasons (English) and return/action messages
   const lines = [`TopPay সিদ্ধান্ত: ${res.status}`];
-  if (res.fast_track) lines.push("", res.fast_track_msg);
-  [["Reject", res.rejects], ["Return", res.returns], ["করতে হবে", res.actions], ["আরো তথ্য", missing]]
-    .forEach(([title, arr]) => {
-      if (!arr.length) return;
-      lines.push("", title + ":");
-      arr.forEach((a) => lines.push("- " + (a.msg || a.text)));
-    });
+  const rej = res.rejects.map((a) => a.msg || a.text);
+  const bp = [...res.returns, ...res.actions].filter((a) => a.msg).map((a) => a.msg);
+  if (rej.length) lines.push("", ...rej.map((t) => "- " + t));
+  if (bp.length) lines.push("", ...bp.map((t) => "- " + t));
   lastText = lines.join("\n");
 }
 
@@ -199,7 +225,7 @@ async function evaluate() {
 
   const mine = ++seq;
   try {
-    const r = await fetch("/api/check", {
+    const r = await authFetch("/api/check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ data }),
@@ -312,7 +338,7 @@ function buildChips() {
 async function openLib() {
   if (!LIB) {
     try {
-      LIB = await (await fetch("templates.json")).json();
+      LIB = await (await authFetch("/api/templates")).json();
     } catch {
       $("libList").textContent = "টেমপ্লেট লোড করা যায়নি।";
       return;
@@ -371,3 +397,63 @@ $("imeiNo").addEventListener("input", (e) => {
 
 // ---------- mobile: result is a bottom sheet, tap the badge to expand ----------
 $("badge").addEventListener("click", () => $("resultcol").classList.toggle("open"));
+
+
+// ---------- login form, logout, session check ----------
+$("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("lbtn");
+  btn.disabled = true; btn.textContent = "অপেক্ষা করুন…";
+  try {
+    const r = await fetch("/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: $("lu").value, password: $("lp").value }),
+    });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(out.detail || "Login হয়নি");
+    setToken(out.token);
+    $("lp").value = "";
+    showApp();
+  } catch (err) {
+    showLogin("❌ " + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "Login";
+  }
+});
+
+$("logout").addEventListener("click", () => {
+  setToken(null); LIB = null;
+  form.reset(); updateVisibility(); showEmpty(); showTab("check");
+  showLogin("");
+});
+
+(async function boot() {
+  if (!getToken()) { showLogin(""); return; }
+  try {
+    const r = await fetch("/api/me", { headers: { Authorization: "Bearer " + getToken() } });
+    if (r.ok) showApp(); else { setToken(null); showLogin(""); }
+  } catch { showLogin("Server-এর সাথে যোগাযোগ করা যাচ্ছে না।"); }
+})();
+
+// ---------- suggestion box (goes to the owner's mail on the server; address never shown here) ----------
+$("fbSend").addEventListener("click", async () => {
+  const st = $("fbStatus"), btn = $("fbSend");
+  const email = $("fbEmail").value.trim(), message = $("fbMsg").value.trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { st.textContent = "⚠️ সঠিক email দিন।"; return; }
+  if (message.length < 5) { st.textContent = "⚠️ মেসেজটা একটু বড় করে লিখুন।"; return; }
+  btn.disabled = true; st.textContent = "পাঠানো হচ্ছে…";
+  try {
+    const r = await authFetch("/api/feedback", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, message, website: $("fbWebsite").value }),
+    });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(out.detail || "পাঠানো যায়নি");
+    st.textContent = "✅ ধন্যবাদ! আপনার মেসেজ পাঠানো হয়েছে।";
+    $("fbMsg").value = "";
+  } catch (err) {
+    st.textContent = "❌ " + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
