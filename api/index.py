@@ -1,10 +1,10 @@
-"""FastAPI backend for TopPay Smart Decision Assistant (Vercel-ready).
-Local:   uvicorn api.index:app --reload     -> http://127.0.0.1:8000
+"""FastAPI backend for TopPay Smart Decision Assistant (Vercel-ready).  Contract: see API.md
+Local:   python -m uvicorn api.index:app --reload     -> http://127.0.0.1:8000
 Vercel:  routed through vercel.json; static files are served from /public.
 """
 import os
 import sys
-from typing import Optional
+from typing import List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -16,11 +16,15 @@ from email.message import EmailMessage  # noqa: E402
 from fastapi import Depends, FastAPI, Header, HTTPException, Request  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
+import sharedlogin  # noqa: E402
+import store  # noqa: E402
+import templates_store as ts  # noqa: E402
 from auth import (  # noqa: E402
-    check_credentials, client_ip, make_token, rate_limit, require_login, verify_token,
+    admin_name, admin_uses_defaults, check_credentials, client_ip, make_token, rate_limit, require_admin,
+    require_login, secret_is_default,
 )
-from rules_engine import FIELDS, evaluate_application  # noqa: E402
-from templates_data import TEMPLATES  # noqa: E402
+from case import build_case  # noqa: E402
+from rules_engine import FIELDS  # noqa: E402
 
 app = FastAPI(title="TopPay Smart Decision Assistant")
 
@@ -37,8 +41,15 @@ class AnalyzeIn(BaseModel):
     data: dict = {}
 
 
+class ManualIn(BaseModel):
+    tid: str
+    kind: Optional[str] = None      # "return" | "reject"; default = the template's own section kind
+
+
 class CheckIn(BaseModel):
     data: dict
+    manual: List[ManualIn] = []     # reasons the reviewer added by hand
+    dismissed: List[str] = []       # keys of automatic reasons the reviewer switched off
 
 
 class LoginIn(BaseModel):
@@ -60,30 +71,135 @@ def health():
 @app.post("/api/login")
 def login(body: LoginIn, request: Request):
     ip = client_ip(request)
-    if not rate_limit("login:" + ip, 8, 600):
+    if not rate_limit("login:" + ip, 8, 600) or not rate_limit("login:all", 60, 600):
         raise HTTPException(status_code=429, detail="অনেকবার ভুল চেষ্টা হয়েছে। কিছুক্ষণ পরে আবার চেষ্টা করুন।")
-    if not check_credentials(body.username.strip(), body.password):
-        time.sleep(0.6)  # slow down guessing
-        raise HTTPException(status_code=401, detail="ID বা Password ভুল।")
-    return {"token": make_token(body.username.strip())}
+    name = body.username.strip()
+    if check_credentials(name, body.password):
+        return {"token": make_token(name, "admin"), "role": "admin"}
+    shown = sharedlogin.verify(name, body.password)
+    if shown:
+        return {"token": make_token(shown, "user"), "role": "user"}
+    time.sleep(0.6)  # slow down guessing
+    raise HTTPException(status_code=401, detail="ID বা Password ভুল।")
 
 
 @app.get("/api/me")
-def me(user: str = Depends(require_login)):
-    return {"user": user}
+def me(who: dict = Depends(require_login)):
+    out = {"user": who["u"], "role": who["r"]}
+    if who["r"] == "admin":                  # only the admin sees set-up warnings
+        warn = []
+        if secret_is_default():
+            warn.append("AUTH_SECRET সেট করা নেই।")
+        if admin_uses_defaults():
+            warn.append("ADMIN_USER / ADMIN_PASS env সেট করা নেই (built-in admin চলছে)।")
+        if store.backend() is None:
+            warn.append("Database (Upstash Redis) যুক্ত নেই: Global template edit ও Shared login সেটিং কাজ করবে না।")
+        if sharedlogin.source() == "none":
+            warn.append("Shared user login এখনো ঠিক করা হয়নি (Admin tab থেকে ঠিক করুন)।")
+        out["warnings"] = warn
+    return out
 
 
+# ---------------------------------------------------------- admin: the ONE shared login
+class SharedLoginIn(BaseModel):
+    username: str
+    password: str
+
+
+def _write_limit(who: dict, request: Request):
+    """Rate limit for every write: 40 per 10 minutes per admin + IP."""
+    if not rate_limit("w:" + who["u"] + ":" + client_ip(request), 40, 600):
+        raise HTTPException(status_code=429, detail="অনেক দ্রুত বদলানো হচ্ছে, একটু পরে চেষ্টা করুন।")
+
+
+@app.get("/api/admin/shared-login")
+def shared_login_info(who: dict = Depends(require_admin)):
+    return sharedlogin.info()
+
+
+@app.put("/api/admin/shared-login")
+def shared_login_set(body: SharedLoginIn, request: Request, who: dict = Depends(require_admin)):
+    _write_limit(who, request)
+    try:
+        sharedlogin.set_credentials(body.username, body.password, admin_name())
+    except sharedlogin.LoginSettingError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, **sharedlogin.info()}
+
+
+# ---------------------------------------------------------- templates
 @app.get("/api/templates")
-def templates(user: str = Depends(require_login)):
-    """BP message library - only for logged-in users."""
-    return TEMPLATES
+def templates(who: dict = Depends(require_login)):
+    """BP message library (global layer applied) - only for logged-in users. Admin also gets hidden items."""
+    out = ts.catalog(include_hidden=who["r"] == "admin")
+    out["api_version"] = 2
+    out["role"] = who["r"]
+    out["can_edit_global"] = who["r"] == "admin"
+    return out
 
 
+class TextIn(BaseModel):
+    text: str
+
+
+class NewTemplateIn(BaseModel):
+    section: str
+    text: str
+
+
+class HiddenIn(BaseModel):
+    hidden: bool
+
+
+def _tpl_call(fn, *args):
+    try:
+        return fn(*args)
+    except ts.TemplateError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except store.StoreUnavailable:
+        raise HTTPException(status_code=502, detail="Database যুক্ত নেই বা যোগাযোগ করা যাচ্ছে না।")
+
+
+@app.put("/api/templates/{tid}")
+def template_edit(tid: str, body: TextIn, request: Request, who: dict = Depends(require_admin)):
+    _write_limit(who, request)
+    _tpl_call(ts.set_text, tid, body.text, who["u"])
+    return {"ok": True}
+
+
+@app.post("/api/templates")
+def template_new(body: NewTemplateIn, request: Request, who: dict = Depends(require_admin)):
+    _write_limit(who, request)
+    return {"ok": True, "id": _tpl_call(ts.create_custom, body.section, body.text, who["u"])}
+
+
+@app.post("/api/templates/{tid}/hidden")
+def template_hide(tid: str, body: HiddenIn, request: Request, who: dict = Depends(require_admin)):
+    _write_limit(who, request)
+    _tpl_call(ts.set_hidden, tid, body.hidden, who["u"])
+    return {"ok": True}
+
+
+@app.post("/api/templates/{tid}/reset")
+def template_reset(tid: str, request: Request, who: dict = Depends(require_admin)):
+    _write_limit(who, request)
+    _tpl_call(ts.reset_builtin, tid)
+    return {"ok": True}
+
+
+@app.delete("/api/templates/{tid}")
+def template_delete(tid: str, request: Request, who: dict = Depends(require_admin)):
+    _write_limit(who, request)
+    _tpl_call(ts.delete_custom, tid)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------- suggestion box
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 @app.post("/api/feedback")
-def feedback(body: FeedbackIn, request: Request, user: str = Depends(require_login)):
+def feedback(body: FeedbackIn, request: Request, user: dict = Depends(require_login)):
     """Suggestion box. The recipient is read from the server environment and is never sent to the browser.
     Env (Vercel):  SMTP_USER (Gmail address), SMTP_PASS (Gmail *App Password*), FEEDBACK_TO (optional, default SMTP_USER)
     """
@@ -117,8 +233,17 @@ def feedback(body: FeedbackIn, request: Request, user: str = Depends(require_log
     return {"ok": True}
 
 
+# ---------------------------------------------------------- the decision
+@app.post("/api/check")
+def check(body: CheckIn, user: dict = Depends(require_login)):
+    """Manual form: no AI, no API key, no cost - pure rule engine. Nothing from the request is stored or logged."""
+    out = build_case(body.data, [m.model_dump() for m in body.manual], body.dismissed)
+    out["data"] = {k: body.data.get(k) for k in FIELDS}
+    return out
+
+
 @app.post("/api/analyze")
-def analyze(body: AnalyzeIn, x_app_pin: Optional[str] = Header(default=None), user: str = Depends(require_login)):
+def analyze(body: AnalyzeIn, x_app_pin: Optional[str] = Header(default=None), user: dict = Depends(require_login)):
     """AI text box (currently switched off in the UI). Needs: pip install google-genai openai"""
     from llm_parser import merge, parse_with_llm  # lazy import: not needed for the manual form
 
@@ -141,14 +266,9 @@ def analyze(body: AnalyzeIn, x_app_pin: Optional[str] = Header(default=None), us
         raise HTTPException(status_code=502, detail=f"AI parser error: {e}")
 
     merged = merge(previous, parsed)
-    return {"data": merged, "result": evaluate_application(merged)}
-
-
-@app.post("/api/check")
-def check(body: CheckIn, user: str = Depends(require_login)):
-    """Manual form: no AI, no API key, no cost - pure rule engine."""
-    data = {k: body.data.get(k) for k in FIELDS}
-    return {"data": data, "result": evaluate_application(data)}
+    out = build_case(merged)
+    out["data"] = merged
+    return out
 
 
 # Local development only (on Vercel the CDN serves /public).

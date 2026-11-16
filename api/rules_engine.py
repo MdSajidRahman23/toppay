@@ -1,24 +1,30 @@
 """
 TopPay Services Ltd. - deterministic policy engine (effective 8 November).
-Pure Python, no external dependencies. All thresholds live in CONFIG so the
-policy can be changed in one place.
+Pure Python, no external dependencies. All thresholds live in CONFIG so the policy can be changed in one place.
 
-Every reason in the result is a dict: {"text": short explanation, "msg": ready-to-send message}.
- - returns / actions: msg = the official Bangla BP message from the Issue Template
- - rejects:           msg = the official English reject reason from the Issue Template
+The engine NEVER contains message text. Every reason is a dict
+    {"key": stable rule key, "kind": "reject" | "return" | "action", "tid": template id or None,
+     "params": {placeholder values}, "why": short internal explanation (English)}
+and the text is looked up from the template store (templates_store.py: built-in -> global admin edit);
+the browser may add a personal (local) edit on top. So a message can change without touching this file.
+
+Final status is decided ONLY by combine_status() (automatic reasons + manual reasons + dismissals):
+    REJECTED > RETURNED > MORE INFO NEEDED > ACTION REQUIRED > APPROVED
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 # ----------------------------------------------------------------- CONFIG
 CONFIG = {
     "customer_age": (19, 62),
     "guarantor_age": (21, 62),
+    # SOP: in the last 3 months at least ONE month needs a cash-in OR a cash-out of 2,000+ (each direction on its own,
+    # NOT cash-in + cash-out added together). 6,000+ in one month (same way) = fast-track guarantor call.
     "min_month_tx": 2000,
     "fast_track_tx": 6000,
     "high_mrp": 50000,
-    "high_mrp_tx3": 15000,
+    "high_mrp_tx3": 15000,       # 3-month total (cash-in + cash-out added together) for MRP >= 50,000
     "tx3_exempt": 30000,
     "dp_exempt_pct": 40,
     "salary_exempt": 25000,
@@ -26,10 +32,11 @@ CONFIG = {
     # Business hours (24h) from the Issue Template: 9 AM - 5 PM. Bangladesh weekend = Fri, Sat.
     "business_hours": (9, 17),
     "weekend_days": (4, 5),  # Monday=0 ... Friday=4, Saturday=5
-    # Fairness margins: age is judged in decimal years (26.6 = 26y 7m) with a 6-month margin
-    # either side; money thresholds get a small BDT margin (not MRP - that is a price, 49,999 stays below 50,000).
+    # Fairness margins: age is judged in decimal years (26.6 = 26y 7m) with a 6-month margin either side;
+    # money thresholds get a small BDT margin (not MRP - that is a price, 49,999 stays below 50,000).
     "age_tolerance_years": 0.5,
-    "money_tolerance": 100,
+    "money_tolerance": 60,
+    "statement_months": 3,
     # MRP below 50,000 with down payment >= 40%: guarantor call can be short (internal note only).
     "dp40_short_guarantor_call": True,
 }
@@ -53,27 +60,28 @@ STATUS_RETURNED = "RETURNED"
 STATUS_REJECTED = "REJECTED / SUSPECTED FRAUD"
 STATUS_NEED_INFO = "MORE INFO NEEDED"
 
-# ------------------------------------------- red flags -> official reject text
-# (field, reject reason as written in the Issue Template). Order = display order.
-# The same field names must exist as checkboxes in public/index.html.
-REJECT_FLAGS = [
-    ("is_nid_edited", "Customer is suspected of fraud. The customer's NID card was edited."),
-    ("nid_parent_names_edited", "Customer is suspected of fraud. The customer's NID card was edited by changing the parents' names."),
-    ("nid_ai_fake", "The customer's NID card has been identified as fake and AI-generated."),
-    ("nid_not_in_portal", "Customer is suspected of fraud. No record of the customer's NID was found in the e-Passport verification portal."),
-    ("nid_photo_mismatch", "Customer is suspected of fraud. The customer's NID photo does not match the on-site photos."),
-    ("voice_mismatch", "Customer is suspected of fraud. Someone else has spoken as a customer."),
-    ("customer_not_interested", "As per the customer voice, the customer does not want to buy this phone anymore."),
-    ("guarantor_nid_edited", "Guarantor is suspected of fraud. The guarantor's NID card was edited."),
-    ("guarantor_nid_not_in_portal", "Guarantor is suspected of fraud. The guarantor's NID is fake. No record of the NID was found on the e-Passport verification portal."),
-    ("guarantor_nid_no_sign", "Suspected fraud. Guarantor NID card is fake (here guarantor sign / fingerprint doesn't exist). That's why this application is rejected."),
-    ("guarantor_nid_ears", "The guarantor's ears are not visible in the NID card photo. Normally, the ears should be visible in an NID card photo. This indicates that the NID card has been edited."),
-    ("is_statement_edited", "Rejected due to fake bKash/Nagad statement. The statement has been edited."),
-    ("palmpay_edited", "Customer is suspected of fraud. The customer's PalmPay records have been edited."),
-    ("palmpay_overdue", "The customer has an overdue loan on PalmPay."),
-    ("repeated_resubmit", "The required documents were requested multiple times and explained over the phone, but the BP kept resubmitting without providing them. Therefore, the application has been rejected."),
-    ("call_info_unverifiable", "Call information is incorrect or unverifiable - rejected for suspected fraud."),
-]
+# ----------------------------------------------- template ids (texts: templates_data.py + admin edits)
+TID = {
+    "tx_month": "stm.24",        # best month below 2,000 (cash-in OR cash-out) - wording changed Nov 2026 (not the sum)
+    "tx3_15k": "job.02", "slip_hours": "stm.22", "slip_bad": "stm.23",
+    "nid_name_c": "nid.09", "nid_name_g": "nid.10", "office_phone": "con.15", "g_no_prof": "gua.09",
+    "nid_orig": "nid.02", "g_not_family": "gua.05", "spouse_proof": "stm.16",
+    "g_age_high": "gua.02", "g_age_low": "gua.04", "job_id": "job.01",
+    "lic_none": "biz.01", "lic_expired": "biz.03", "rider": "biz.06", "landowner": "biz.07",
+    "stmt_not_3_months": "stm.01",
+    "rel_reject": "rej.28", "not_served": "rej.29", "outside_area": "rej.30", "age_customer": "rej.31",
+}
+
+# red flag checkbox -> English reject template (order = display order; same names are checkboxes in public/index.html)
+FLAG_TID = {
+    "is_nid_edited": "rej.23", "nid_parent_names_edited": "rej.11", "nid_ai_fake": "rej.05",
+    "nid_not_in_portal": "rej.09", "nid_photo_mismatch": "rej.15", "voice_mismatch": "rej.06",
+    "customer_not_interested": "rej.16", "guarantor_nid_edited": "rej.24", "guarantor_nid_not_in_portal": "rej.13",
+    "guarantor_nid_no_sign": "rej.17", "guarantor_nid_ears": "rej.19", "is_statement_edited": "rej.25",
+    "palmpay_edited": "rej.14", "palmpay_overdue": "rej.26", "repeated_resubmit": "rej.18",
+    "call_info_unverifiable": "rej.27",
+}
+REJECT_FLAGS = list(FLAG_TID)
 
 # Every field the form / API may fill. None = not mentioned.
 FIELDS = [
@@ -85,70 +93,12 @@ FIELDS = [
     "outside_address_area", "salary_slip_submitted", "salary_slip_handwritten",
     "submission_datetime", "submission_note", "job_id_status", "trade_license_status",
     "has_shop_photos", "statement_in_business_name",
-] + [f for f, _ in REJECT_FLAGS]
-
-# ------------------------------------------ official Bangla BP messages (returns)
-T_TX_MONTH = ("গত ৩ মাসের ({m3}) স্টেটমেন্টে প্রয়োজনীয় লেনদেন পাওয়া যায়নি (আবেদন এর দিন থেকে গত ৭ দিন বাদ এ "
-              "(যে কোন এক মাসে ক্যাশ ইন অথবা ক্যাশ আউট মিলিয়ে ২০০০ টাকা)। অনুগ্রহ করে গ্রাহকের অন্য স্টেটমেন্ট "
-              "বিকাশ/নগদ/ব্যাংক স্টেটমেন্ট এই এমাউন্টের লেনদেন আছে সেই স্টেটমেন্ট সাবমিট করুন।")
-T_TX3_15K = ("গত ৩ মাসের স্টেটমেন্টে প্রয়োজনীয় লেনদেন পাওয়া যায়নি (ক্যাশ ইন অথবা ক্যাশ আউট মিলিয়ে ১৫,০০০টাকা, "
-             "অনুগ্রহ করে গ্রাহকের অন্য স্টেটমেন্ট বিকাশ/নগদ/ব্যাংক স্টেটমেন্ট এই এমাউন্টের লেনদেন আছে সেই "
-             "স্টেটমেন্ট সাবমিট করুন।")
-T_SLIP_HOURS = ("কাস্টমার স্যালারি স্লিপ দিয়েছেন এবং Business hour এর পরে আবেদন করেছেন। অনুগ্রহ করে আবেদন টি "
-                "business hour (সকাল ৯ টা থেকে বিকেল ৫ টা) এর মধ্যে করার জন্য অনুরোধ করা হলো।")
-T_SLIP_BAD = ("কাস্টমার যে স্যালারি স্লিপ দিয়েছেন সেখানে কোম্পানি থেকে দেওয়া কোম্পানি এর পরিচিতি, স্যালারি স্লিপ যাচাই "
-              "এর জন্য যোগাযোগের মাধ্যম, সিল এবং ওই ডিপার্টমেন্ট প্রধানের নাম পদবি সহ সাক্ষর থাকা লাগবে। যেটা এই "
-              "স্যালারি স্লিপ এ নেই। তাই অনুগ্রহ করে কাস্টমার এর গত ৩ মাসের ({m3}) PDF বিকাশ/নগদ/ব্যাংক স্টেটমেন্ট "
-              "প্রদান করুন।")
-T_NID_NAME_C = "NID অনুযায়ী কাস্টমারের নাম সংশোধন করুন।"          # Issue Template
-T_NID_NAME_G = "NID অনুযায়ী গ্যারান্টরের নাম সংশোধন করুন।"        # Issue Template
-T_OFFICE_PHONE = ("অনুগ্রহ করে কাস্টমারের ব্যক্তিগত মোবাইল নম্বর দিন। অফিস/অফিসিয়াল ফোন নম্বর গ্রহণযোগ্য নয়।")
-T_G_NO_PROF = ("কাস্টমার কিছুই করেন না (বেকার), তাই জামিনদারের পেশা থাকতে হবে। জামিনদারের পেশা নেই। "
-               "অনুগ্রহ করে জামিনদার পরিবর্তন করুন।")
-T_NID_ORIG = "কাস্টমারের Original NID-এর উভয় পাশের ছবি জমা দিন; ফটোকপি/স্ক্যান কপি NID গ্রহণযোগ্য নয়।"
-T_G_NOT_FAMILY = ("জামিনদার রক্তের সম্পর্কযুক্ত বা স্বামী/স্ত্রী নন। অনুগ্রহ করে জামিনদার পরিবর্তন করুন "
-                  "(শুধুমাত্র মা/বাবা/ভাই/বোন/স্বামী/স্ত্রী, বয়স ২১–৬২ বছর)।")
-T_SPOUSE_PROOF = ("কাস্টমার উনার স্বামীর /স্ত্রীর স্টেটমেন্ট দিয়েছে, তাই প্রয়োজনীয় সম্পর্ক প্রমাণ (ম্যারেজ সার্টিফিকেট / "
-                  "সন্তানের জন্ম নিবন্ধন / NID) সাবমিট করতে হবে, যা সাবমিট করা হয়নি অনুগ্রহ করে প্রয়োজনীয় তথ্য সহ "
-                  "রিসাবমিট করুন।")
-T_G_AGE_HIGH = ("জামিনদারের বয়স ৬২ বছরের বেশি। অনুগ্রহ করে জামিনদার পরিবর্তন করুন "
-                "(শুধুমাত্র মা/বাবা/ভাই/বোন/স্বামী/স্ত্রী, বয়স ২১–৬২ বছর)।")
-T_G_AGE_LOW = "জামিনদারের বয়স ২১ বছরের কম। অনুগ্রহ করে জামিনদার পরিবর্তন করুন ( বয়স ২১–৬২ বছর)।"
-T_JOB_ID = ("কাস্টমার এর valid job id সাবমিট করুন। পলিসি অনুযায়ী ৫০ হাজার এর বেশি দামি মোবাইল এর ক্ষেত্রে job holder "
-            "হিসেবে আবেদন করলে Job id দিতে হবে।")
-T_LIC_NONE = ("Valid ট্রেড লাইসেন্সের কপি অথবা দোকানের সাইনবোর্ডের ছবি submit করুন। ক্যাশ কাউন্টারে বসা অবস্থায় "
-              "কাস্টমারের ছবি দিন।")
-T_LIC_EXPIRED = ("ট্রেড লাইসেন্স এর মেয়াদ উত্তীর্ণ হয়ে গেছে, অনুগ্রহ করে রিনিউ ট্রেড লাইসেন্স প্রদান করুন অথবা সাইন বোর্ড "
-                 "সহ দোকানের ছবি submit করুন। ক্যাশ কাউন্টারে বসা অবস্থায় কাস্টমারের ছবি দিন।")
-
-T_RIDER = ("কাস্টমার Rider হিসেবে আবেদন করেছেন। পলিসি অনুযায়ী ৫০ হাজার এর বেশি দামি মোবাইল এর ক্ষেত্রে Rider হিসেবে "
-           "আবেদন করলে ৪০% down payment দিতে হবে। তা না হলে উনি ৫০ হাজার এর নিচের ফোন এর জন্য আবেদন করতে পারবেন।")
-T_LANDOWNER = ("কাস্টমার একজন Land owner হিসেবে আবেদন করেছেন। পলিসি অনুযায়ী ৫০ হাজার এর বেশি দামি মোবাইল এর ক্ষেত্রে land "
-               "owner হিসেবে আবেদন করলে মাসিক বাড়ি ভাড়া পাওয়ার রশিদ দিতে হবে। (কাস্টমার একজন বাড়ির মালিক এবং উনি বাড়ি "
-               "ভাড়া পান সেই রশিদ)। তা না হলে কাস্টমার এই ফোন এর জন্য ৪০% downpayment দিয়ে নিতে পারবেন। আর সেটা না পারলে "
-               "অনুগ্রহ করে ৫০ হাজার এর কমদামি ফোন এর জন্য আবেদন করুন।")
-T_REL_REJECT = ("As the customer and the guarantor failed to provide consistent information regarding their relationship, "
-                "the application has been rejected.")
-
-_MONTHS = ["January", "February", "March", "April", "May", "June", "July",
-           "August", "September", "October", "November", "December"]
+    "stmt_months_covered",   # derived by the browser statement checker (0-3); no statement content is ever sent
+] + REJECT_FLAGS
 
 
-def last_three_months(today: datetime | None = None) -> str:
-    """'August, September, October' when today is in November (Bangladesh time)."""
-    t = today or datetime.now(timezone(timedelta(hours=6)))
-    out = []
-    for k in (3, 2, 1):
-        m, y = t.month - k, t.year
-        while m <= 0:
-            m += 12
-            y -= 1
-        out.append(_MONTHS[m - 1])
-    return ", ".join(out)
-
-
-def _i(text: str, msg: str | None = None) -> dict:
-    return {"text": text, "msg": msg}
+def _r(kind: str, key: str, why: str, tid: str | None = None, **params) -> dict:
+    return {"key": key, "kind": kind, "tid": tid, "params": params, "why": why}
 
 
 # ---------------------------------------------------------------- helpers
@@ -165,7 +115,7 @@ def _flag(v):
 
 
 def _ge(value, threshold):
-    """value >= threshold, allowing the small money tolerance (e.g. 1,950 counts as 2,000)."""
+    """value >= threshold, allowing the small money tolerance (e.g. 1,940 counts as 2,000)."""
     return value is not None and value >= threshold - CONFIG["money_tolerance"]
 
 
@@ -177,10 +127,9 @@ def _fmt_age(a: float) -> str:
     return f"{y}y {m}m"
 
 
-def _best_month_floor(d):
-    """Lowest value the best single month can have: max(stated, 3-month total / 3)."""
-    vals = [x for x in (_num(d.get("tx_1_month")), (_num(d.get("tx_3_month")) or 0) / 3 or None) if x is not None]
-    return max(vals) if vals else None
+def _best_month(d):
+    """Best single month (the bigger of cash-in / cash-out) as typed or derived by the statement checker."""
+    return _num(d.get("tx_1_month"))
 
 
 def _exempt_known(d):
@@ -227,7 +176,7 @@ def find_missing(d: dict) -> list[tuple[str, str]]:
     mrp = _num(d.get("mrp"))
     prof = d.get("profession")
     tx3 = _num(d.get("tx_3_month"))
-    floor = _best_month_floor(d)
+    best = _best_month(d)
 
     if _num(d.get("customer_age")) is None:
         q.append(("customer_age", "Customer-er boyos koto?"))
@@ -237,8 +186,8 @@ def find_missing(d: dict) -> list[tuple[str, str]]:
         q.append(("mrp", "MRP koto taka?"))
     if prof == "unemployed" and d.get("guarantor_profession") is None:
         q.append(("guarantor_profession", "Customer beker - guarantor-er peshha ki? (peshha thakte hobe)"))
-    if floor is None or (not _ge(floor, CONFIG["min_month_tx"]) and _num(d.get("tx_1_month")) is None):
-        q.append(("tx_1_month", "Shobcheye bhalo 1 mash-er bKash/bank transaction (cash in + cash out) koto?"))
+    if best is None:
+        q.append(("tx_1_month", "Shobcheye bhalo 1 mash-er bKash/bank transaction koto? (cash-in ba cash-out - jeta boro, jog kore na)"))
     if d.get("name_mismatch") is True and d.get("guarantor_relation") is None:
         q.append(("guarantor_relation", "Name mismatch ache - guarantor customer-er ke hoy? (father/mother/brother/sister/spouse/onno)"))
     if d.get("guarantor_relation") == "spouse" and d.get("name_mismatch") is True and d.get("spouse_proof") is None:
@@ -247,7 +196,7 @@ def find_missing(d: dict) -> list[tuple[str, str]]:
     if mrp is not None and mrp >= CONFIG["high_mrp"] and prof:
         dp = _num(d.get("down_payment_pct"))
         if prof in ("job_holder", "student", "businessman") and tx3 is None:
-            q.append(("tx_3_month", "MRP 50,000+; 3 mash-er total transaction koto?"))
+            q.append(("tx_3_month", "MRP 50,000+; 3 mash-er total transaction (cash-in + cash-out jog kore) koto?"))
         if prof in ("rider", "house_owner") and dp is None:
             if not (prof == "house_owner" and _ge(_num(d.get("rental_income")) or 0, CONFIG["rental_income_min"])):
                 q.append(("down_payment_pct", "Down payment koto %?"))
@@ -266,7 +215,6 @@ def find_missing(d: dict) -> list[tuple[str, str]]:
                 q.append(("has_shop_photos", "Signboard shoho 2-ta shop photo + cash counter-e owner-er photo ache?"))
             if lic in (None, "none") and dp is None:
                 q.append(("down_payment_pct", "Down payment koto %?"))
-    # de-duplicate, keep order
     seen, out = set(), []
     for k, v in q:
         if k not in seen:
@@ -277,10 +225,13 @@ def find_missing(d: dict) -> list[tuple[str, str]]:
 
 # ------------------------------------------------------------- main engine
 def evaluate_application(data: dict) -> dict:
+    """Automatic part of the decision. Returns reasons (ids + params), passed checks, internal notes, missing facts.
+    The final status is `combine_status(result["reasons"], manual, dismissed, result["missing"])`;
+    result["status"] is that function with no manual reasons and no dismissals."""
     d = {k: data.get(k) for k in FIELDS}
-    rejects, returns, actions, ok, notes = [], [], [], [], []
+    reasons: list[dict] = []
+    ok, notes = [], []
     fast_track = False
-    m3 = last_three_months()
 
     prof = d["profession"]
     gprof = d["guarantor_profession"]
@@ -289,16 +240,18 @@ def evaluate_application(data: dict) -> dict:
     dp = _num(d["down_payment_pct"])
     cage = _num(d["customer_age"])
     gage = _num(d["guarantor_age"])
+    R = reasons.append
 
-    # ---- 1. FRAUD / REJECT  (wording from the Issue Template "Reject Issue" section)
-    for field, msg in REJECT_FLAGS:
+    # ---- 1. FRAUD / REJECT (English reject reasons)
+    for field in REJECT_FLAGS:
         if _flag(d[field]):
-            rejects.append(_i(msg))   # the official reject reason; UI offers a copy button
+            R(_r("reject", "flag:" + field, f"Red-flag checkbox ticked: {field}", FLAG_TID[field]))
     for who, p in (("Customer", prof), ("Guarantor", gprof)):
         if p in NOT_SERVED:
-            rejects.append(_i(f"{who} is in a NOT SERVED category: {NOT_SERVED[p]}."))
+            R(_r("reject", f"not_served:{who.lower()}", f"{who} is in a NOT SERVED category: {NOT_SERVED[p]}",
+                 TID["not_served"], who=who, category=NOT_SERVED[p]))
     if _flag(d["outside_address_area"]):
-        rejects.append(_i("Applicant is outside the residential / permanent address area - not served."))
+        R(_r("reject", "outside_area", "Applicant is outside the served address area", TID["outside_area"]))
 
     tol = CONFIG["age_tolerance_years"]
     lo, hi = CONFIG["customer_age"]
@@ -309,9 +262,10 @@ def evaluate_application(data: dict) -> dict:
             ok.append(f"Customer age {_fmt_age(cage)} accepted (within the 6-month margin of {lo}-{hi}).")
             notes.append(f"Customer age {_fmt_age(cage)} is outside {lo}-{hi} by less than 6 months - accepted.")
         else:
-            rejects.append(_i(f"Customer age {_fmt_age(cage)} is outside {lo}-{hi}."))
+            R(_r("reject", "customer_age", f"Customer age {_fmt_age(cage)} is outside {lo}-{hi}.",
+                 TID["age_customer"], age=_fmt_age(cage), range=f"{lo}-{hi}"))
 
-    # ---- 1b. Guarantor age -> RETURN: BP must change the guarantor (Issue Template)
+    # ---- 1b. Guarantor age -> RETURN: BP must change the guarantor
     lo, hi = CONFIG["guarantor_age"]
     if gage is not None:
         if lo <= gage <= hi:
@@ -320,45 +274,55 @@ def evaluate_application(data: dict) -> dict:
             ok.append(f"Guarantor age {_fmt_age(gage)} accepted (within the 6-month margin of {lo}-{hi}).")
             notes.append(f"Guarantor age {_fmt_age(gage)} is outside {lo}-{hi} by less than 6 months - accepted.")
         elif gage > hi:
-            returns.append(_i(f"Guarantor age {_fmt_age(gage)} is above {hi} - guarantor must be changed.", T_G_AGE_HIGH))
+            R(_r("return", "guarantor_age", f"Guarantor age {_fmt_age(gage)} is above {hi} - guarantor must be changed.", TID["g_age_high"]))
         else:
-            returns.append(_i(f"Guarantor age {_fmt_age(gage)} is below {lo} - guarantor must be changed.", T_G_AGE_LOW))
+            R(_r("return", "guarantor_age", f"Guarantor age {_fmt_age(gage)} is below {lo} - guarantor must be changed.", TID["g_age_low"]))
 
-    # ---- 1c. Statement transactions -> RETURN: ask for another statement (Issue Template)
-    floor = _best_month_floor(d)
-    if floor is not None:
-        if _ge(floor, CONFIG["min_month_tx"]):
-            ok.append(f"At least one month has transactions >= BDT {CONFIG['min_month_tx']:,}.")
+    # ---- 1c. Statement: 3 months covered, one month with cash-in OR cash-out >= 2,000
+    months = _num(d["stmt_months_covered"])
+    need_m = CONFIG["statement_months"]
+    if months is not None:
+        if months < need_m:
+            R(_r("return", "stmt_not_3_months", f"The statement covers only {months:.0f} of the last {need_m} months.",
+                 TID["stmt_not_3_months"]))
         else:
-            returns.append(_i(
-                f"No month reaches BDT {CONFIG['min_month_tx']:,} (best month ~{floor:,.0f}); "
-                "the last 7 days before application are not counted. Ask for another statement.",
-                T_TX_MONTH.format(m3=m3)))
-        if _ge(floor, CONFIG["fast_track_tx"]):
+            ok.append(f"The statement covers the last {need_m} months.")
+    best = _best_month(d)
+    if best is not None:
+        if _ge(best, CONFIG["min_month_tx"]):
+            ok.append(f"At least one month has a cash-in or cash-out of BDT {CONFIG['min_month_tx']:,} or more (best month {best:,.0f}).")
+        else:
+            R(_r("return", "tx_month",
+                 f"No month reaches BDT {CONFIG['min_month_tx']:,} in cash-in or in cash-out (best month {best:,.0f}); "
+                 "the last 7 days before the application are not counted. Ask for another statement.",
+                 TID["tx_month"]))
+        if _ge(best, CONFIG["fast_track_tx"]):
             fast_track = True
-    notes.append("Statement must cover the last 3 months; the last 7 days before application are not counted.")
+    notes.append("Statement must cover the last 3 months; the last 7 days before application are not counted. "
+                 "Cash-in and cash-out are NOT added together for the 2,000 rule.")
 
     # ---- 1d. Relationship check during the call (nervous slips get one chance; no prompting)
     rc = d["relation_check"]
     prompting = _flag(d["side_prompting"])
     if rc == "major":
-        rejects.append(_i(T_REL_REJECT))
+        R(_r("reject", "relation_major", "Customer and guarantor gave inconsistent relationship information.", TID["rel_reject"]))
     elif rc == "pending" and not prompting:
-        actions.append(_i("Relationship answer is slightly different (e.g. chachato vs fufato bhai). The customer may be "
-                          "nervous - give ONE chance to correct it, without hinting the answer. If corrected: accepted. "
-                          "If the relationship is still different: reject."))
+        R(_r("action", "relation_pending",
+             "Relationship answer is slightly different (e.g. chachato vs fufato bhai). The customer may be nervous - give ONE "
+             "chance to correct it, without hinting the answer. If corrected: accepted. If still different: reject."))
     elif rc == "corrected" and not prompting:
         ok.append("Small relationship slip was corrected by the customer himself - accepted.")
     if prompting:
         extra = (" The correction came while someone was prompting, so it does not count - ask again."
                  if rc == "corrected" else "")
-        actions.append(_i("Someone nearby is telling the answers. Tell them to stop. Do not accept answers the customer "
-                          "repeats after hearing them - ask again so the customer answers on his own." + extra))
+        R(_r("action", "side_prompting",
+             "Someone nearby is telling the answers. Tell them to stop. Do not accept answers the customer repeats after "
+             "hearing them - ask again so the customer answers on his own." + extra))
 
     # ---- 1e. Notes when a money threshold was met only thanks to the small BDT margin
     mt = CONFIG["money_tolerance"]
-    pairs = [("1-month transaction", floor, CONFIG["min_month_tx"]),
-             ("1-month transaction (Fast-Track)", floor, CONFIG["fast_track_tx"])]
+    pairs = [("Best month (cash-in or cash-out)", best, CONFIG["min_month_tx"]),
+             ("Best month (Fast-Track)", best, CONFIG["fast_track_tx"])]
     if mrp is not None and mrp >= CONFIG["high_mrp"]:
         if prof in ("job_holder", "student", "businessman"):
             pairs += [("3-month transaction", tx3, CONFIG["high_mrp_tx3"]),
@@ -372,19 +336,20 @@ def evaluate_application(data: dict) -> dict:
             notes.append(f"{label} {v:,.0f} is BDT {thr - v:,.0f} short of {thr:,} - accepted (margin: BDT {mt}).")
 
     if d["has_original_nid"] is False:
-        returns.append(_i("Customer must provide the ORIGINAL NID (photocopy not accepted for customer).", T_NID_ORIG))
+        R(_r("return", "nid_orig", "Customer must provide the ORIGINAL NID (photocopy not accepted for customer).", TID["nid_orig"]))
 
     # ---- 1f. Name vs NID, office phone, unemployed customer -> RETURN
     if _flag(d["nid_name_mismatch"]):
-        returns.append(_i("Customer name does not match the NID.", T_NID_NAME_C))
+        R(_r("return", "nid_name_c", "Customer name does not match the NID.", TID["nid_name_c"]))
     if _flag(d["guarantor_nid_name_mismatch"]):
-        returns.append(_i("Guarantor name does not match the NID.", T_NID_NAME_G))
+        R(_r("return", "nid_name_g", "Guarantor name does not match the NID.", TID["nid_name_g"]))
     if _flag(d["office_phone_number"]):
-        returns.append(_i("An official/office phone number was given - a personal mobile number is required.", T_OFFICE_PHONE))
+        R(_r("return", "office_phone", "An official/office phone number was given - a personal mobile number is required.",
+             TID["office_phone"]))
     if prof == "unemployed":
         if gprof == "unemployed":
-            returns.append(_i("Customer is unemployed, so the guarantor must have a profession - guarantor has none. "
-                              "Change the guarantor.", T_G_NO_PROF))
+            R(_r("return", "g_no_prof", "Customer is unemployed, so the guarantor must have a profession - guarantor has none.",
+                 TID["g_no_prof"]))
         elif gprof:
             ok.append("Customer is unemployed, but the guarantor has a profession.")
     if _dp_relax(d):
@@ -397,11 +362,11 @@ def evaluate_application(data: dict) -> dict:
     if _flag(d["salary_slip_submitted"]):
         why = _outside_hours(d["submission_datetime"], d["submission_note"])
         if why:
-            returns.append(_i(f"Salary slip {why} - cannot be verified (business hours: 9 AM - 5 PM, working days).",
-                              T_SLIP_HOURS))
+            R(_r("return", "slip_hours", f"Salary slip {why} - cannot be verified (business hours: 9 AM - 5 PM, working days).",
+                 TID["slip_hours"]))
         if _flag(d["salary_slip_handwritten"]):
-            returns.append(_i("Salary slip has a handwritten signature/seal - not accepted. "
-                              "An official company/business seal is required.", T_SLIP_BAD.format(m3=m3)))
+            R(_r("return", "slip_bad", "Salary slip has a handwritten signature/seal - an official company seal is required.",
+                 TID["slip_bad"]))
 
     # ---- 3. NAME MISMATCH
     if _flag(d["name_mismatch"]):
@@ -412,40 +377,24 @@ def evaluate_application(data: dict) -> dict:
             if d["spouse_proof"] in ("marriage_certificate", "child_nid", "qr_birth_certificate"):
                 ok.append("Name mismatch is acceptable: spouse with valid proof.")
             else:
-                returns.append(_i("Spouse statement needs a marriage certificate OR the children's NID / QR birth certificate.",
-                                  T_SPOUSE_PROOF))
+                R(_r("return", "spouse_proof", "Spouse statement needs a marriage certificate OR the children's NID / QR birth certificate.",
+                     TID["spouse_proof"]))
         elif rel is not None:
-            returns.append(_i("Name mismatch: guarantor must be a first-blood relative "
-                              "(father, mother, brother, sister) or a spouse with proof. Change the guarantor.",
-                              T_G_NOT_FAMILY))
+            R(_r("return", "g_not_family", "Name mismatch: guarantor must be a first-blood relative or a spouse with proof. Change the guarantor.",
+                 TID["g_not_family"]))
 
     # ---- 4. HIGH-MRP RULES
     if mrp is not None:
         if mrp < CONFIG["high_mrp"]:
             ok.append("MRP below 50,000 - basic requirements apply.")
             if _flag(d["statement_in_business_name"]) and d["trade_license_status"] != "valid":
-                actions.append(_i("Statement is in a business name - a VALID trade license is required.", T_LIC_NONE))
+                R(_r("action", "lic_business_stmt", "Statement is in a business name - a VALID trade license is required.", TID["lic_none"]))
         else:
-            _high_mrp(d, prof, tx3, dp, ok, actions, notes)
+            _high_mrp(d, prof, tx3, dp, ok, reasons, notes)
 
     missing = find_missing(d)
-
-    if rejects:
-        status = STATUS_REJECTED
-    elif returns:
-        status = STATUS_RETURNED
-    elif missing:
-        status = STATUS_NEED_INFO
-    elif actions:
-        status = STATUS_ACTION
-    else:
-        status = STATUS_APPROVED
-
-    return {
-        "status": status,
-        "rejects": rejects,
-        "returns": returns,
-        "actions": actions,
+    out = {
+        "reasons": reasons,
         "passed": ok,
         "notes": notes,
         "missing": missing,
@@ -453,20 +402,22 @@ def evaluate_application(data: dict) -> dict:
         "fast_track_msg": "Fast-Track Guarantor Check: ask only 2 questions - (1) Is the guarantor's phone reachable? "
                           "(2) Does the guarantor know the customer?" if fast_track else "",
     }
+    out["status"] = combine_status(reasons, [], [], missing)["status"]
+    return out
 
 
-def _high_mrp(d, prof, tx3, dp, ok, actions, notes):
+def _high_mrp(d, prof, tx3, dp, ok, reasons, notes):
     CFG = CONFIG
     sug = "Otherwise reduce MRP below 50,000."
     dp_ok = dp is not None and dp >= CFG["dp_exempt_pct"]
+    R = reasons.append
 
     if prof in ("job_holder", "student"):
         if tx3 is not None:
             if _ge(tx3, CFG["high_mrp_tx3"]):
                 ok.append(f"3-month transaction {tx3:,.0f} >= {CFG['high_mrp_tx3']:,}.")
             else:
-                actions.append(_i(f"3-month transaction {tx3:,.0f} is below {CFG['high_mrp_tx3']:,}. Reduce MRP below 50,000.",
-                                  T_TX3_15K))
+                R(_r("action", "tx3_15k", f"3-month transaction {tx3:,.0f} is below {CFG['high_mrp_tx3']:,}. Reduce MRP below 50,000.", TID["tx3_15k"]))
         jid = d["job_id_status"]
         if _exempt_known(d):
             ok.append("Job ID not required (down payment >= 40% / 3-month tx >= 30,000 / valid salary slip > 25,000).")
@@ -475,15 +426,14 @@ def _high_mrp(d, prof, tx3, dp, ok, actions, notes):
         elif jid in ("work_photo", "visiting_card"):
             ok.append("No ID card, but work photo / visiting card accepted.")
         elif jid in ("photocopy", "none") or jid is not None:
-            actions.append(_i("Original Job ID card (hard copy) required - scan/photocopy not accepted. "
-                              "No ID? Work photo or visiting card is accepted. " + sug, T_JOB_ID))
+            R(_r("action", "job_id", "Original Job ID card (hard copy) required - scan/photocopy not accepted. "
+                 "No ID? Work photo or visiting card is accepted. " + sug, TID["job_id"]))
     elif prof == "businessman":
         if tx3 is not None:
             if _ge(tx3, CFG["high_mrp_tx3"]):
                 ok.append(f"3-month transaction {tx3:,.0f} >= {CFG['high_mrp_tx3']:,}.")
             else:
-                actions.append(_i(f"3-month transaction {tx3:,.0f} is below {CFG['high_mrp_tx3']:,}. Reduce MRP below 50,000.",
-                                  T_TX3_15K))
+                R(_r("action", "tx3_15k", f"3-month transaction {tx3:,.0f} is below {CFG['high_mrp_tx3']:,}. Reduce MRP below 50,000.", TID["tx3_15k"]))
         lic = d["trade_license_status"]
         if _exempt_known(d) and lic != "valid":
             ok.append("Trade license not required (down payment >= 40% or 3-month tx >= 30,000).")
@@ -493,17 +443,15 @@ def _high_mrp(d, prof, tx3, dp, ok, actions, notes):
             if d["has_shop_photos"] is True:
                 ok.append("License expired, but 2 shop photos (signboard + owner at cash counter) provided.")
             elif d["has_shop_photos"] is False:
-                actions.append(_i("License expired: take at least 2 shop photos with signboard and the owner at the cash counter.",
-                                  T_LIC_EXPIRED))
+                R(_r("action", "lic_expired", "License expired: take at least 2 shop photos with signboard and the owner at the cash counter.",
+                     TID["lic_expired"]))
         elif lic in ("none",):
-            actions.append(_i("Valid trade license required (or down payment >= 40%, or 3-month tx >= 30,000). " + sug,
-                              T_LIC_NONE))
+            R(_r("action", "lic_none", "Valid trade license required (or down payment >= 40%, or 3-month tx >= 30,000). " + sug, TID["lic_none"]))
     elif prof == "rider":
         if dp_ok:
             ok.append("Rider: down payment >= 40%.")
         elif dp is not None:
-            actions.append(_i(f"Rider needs 40%+ down payment (got {dp:.0f}%). Otherwise eligible for MRP below 50,000 only.",
-                              T_RIDER))
+            R(_r("action", "rider", f"Rider needs 40%+ down payment (got {dp:.0f}%). Otherwise eligible for MRP below 50,000 only.", TID["rider"]))
     elif prof == "house_owner":
         rent = _num(d["rental_income"])
         if _ge(rent, CFG["rental_income_min"]):
@@ -511,7 +459,43 @@ def _high_mrp(d, prof, tx3, dp, ok, actions, notes):
         elif dp_ok:
             ok.append("House owner: down payment >= 40%.")
         elif dp is not None or rent is not None:
-            actions.append(_i("House owner needs rental-income proof >= 25,000/month OR 40%+ down payment. " + sug,
-                              T_LANDOWNER))
+            R(_r("action", "landowner", "House owner needs rental-income proof >= 25,000/month OR 40%+ down payment. " + sug, TID["landowner"]))
     else:
-        actions.append(_i("Profession does not match any MRP >= 50,000 category. Reduce MRP below 50,000."))
+        R(_r("action", "prof_no_match", "Profession does not match any MRP >= 50,000 category. Reduce MRP below 50,000."))
+
+
+# ------------------------------------------------------------- status combination
+def combine_status(auto: list[dict], manual: list[dict] | None = None, dismissed=None, missing=None) -> dict:
+    """The ONE place where the final status is decided.
+
+    auto      reasons from evaluate_application (each has key, kind)
+    manual    reasons the reviewer added by hand: dicts with at least {"kind": "reject" | "return"}
+    dismissed set/list of automatic reason keys the reviewer switched off (they stay visible, but do not count)
+    missing   list of facts still needed (from find_missing)
+
+    Order:  REJECTED > RETURNED > MORE INFO NEEDED > ACTION REQUIRED > APPROVED
+      * any ACTIVE reject (automatic, not dismissed, or manual)  -> REJECTED
+      * any ACTIVE return (automatic, not dismissed, or manual)  -> at least RETURNED
+      * else missing facts                                       -> MORE INFO NEEDED
+      * else any active automatic action                         -> ACTION REQUIRED
+      * else                                                     -> APPROVED
+    """
+    dismissed = set(dismissed or [])
+    manual = manual or []
+    active_auto = [r for r in auto if r["key"] not in dismissed]
+    kinds = [r["kind"] for r in active_auto] + [m.get("kind") for m in manual]
+    if "reject" in kinds:
+        status = STATUS_REJECTED
+    elif "return" in kinds:
+        status = STATUS_RETURNED
+    elif missing:
+        status = STATUS_NEED_INFO
+    elif "action" in kinds:
+        status = STATUS_ACTION
+    else:
+        status = STATUS_APPROVED
+    return {
+        "status": status,
+        "active": {k: kinds.count(k) for k in ("reject", "return", "action")},
+        "dismissed": sorted(k for k in dismissed if any(r["key"] == k for r in auto)),
+    }

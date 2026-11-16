@@ -1,0 +1,9 @@
+.users.json
+.data.json
+__pycache__/
+.env
+.vercel
+.pytest_cache/
+tools/out/
+node_modules/
+test-results/

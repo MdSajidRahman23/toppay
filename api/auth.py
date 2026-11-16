@@ -1,10 +1,10 @@
-"""Login for the TopPay tool (single shared admin account, no database).
+"""Login for the TopPay tool: exactly two roles.
+  admin  - env ADMIN_USER / ADMIN_PASS (or the built-in fallback account below until you set them)
+  user   - ONE shared login (see sharedlogin.py)
 
-* The password is NOT stored in plain text: only a salted PBKDF2 hash is kept below.
-* To change the login without editing code, set these Vercel environment variables:
-    ADMIN_USER, ADMIN_PASS   (plain text, overrides the built-in account)
-    AUTH_SECRET              (any long random string - signs the login tokens; please set it)
-* A login token is a signed, expiring string (stateless, so it works on Vercel serverless).
+* Login tokens are signed, expiring strings (stateless -> works on Vercel serverless). A token carries a fingerprint of the
+  credentials it was issued for; change the password and every old token dies (shared user: within ~20 s).
+* Env AUTH_SECRET signs the tokens - always set it on Vercel.
 """
 import base64
 import hashlib
@@ -14,7 +14,10 @@ import os
 import time
 from typing import Optional
 
-from fastapi import Header, HTTPException, Request
+from fastapi import Depends, Header, HTTPException, Request
+
+import sharedlogin
+import store
 
 DEFAULT_USER = "Toppay_admin"
 _SALT = "e2ee37845c3840cb0037e93e5c40d441"
@@ -23,8 +26,25 @@ _ITER = 200_000
 TOKEN_TTL = 12 * 3600  # seconds
 
 
+def secret_is_default() -> bool:
+    return not os.getenv("AUTH_SECRET")
+
+
 def _secret() -> bytes:
     return (os.getenv("AUTH_SECRET") or ("toppay-default-" + _HASH)).encode()
+
+
+def admin_name() -> str:
+    return os.getenv("ADMIN_USER") or DEFAULT_USER
+
+
+def admin_uses_defaults() -> bool:
+    return not (os.getenv("ADMIN_USER") and os.getenv("ADMIN_PASS"))
+
+
+def admin_fp() -> str:
+    pw = os.getenv("ADMIN_PASS") or _HASH
+    return "a" + hashlib.sha256((admin_name() + "\n" + pw).encode() + _secret()).hexdigest()[:12]
 
 
 def check_credentials(user: str, password: str) -> bool:
@@ -47,39 +67,53 @@ def _unb64(s: str) -> bytes:
     return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 
-def make_token(user: str) -> str:
-    payload = _b64(json.dumps({"u": user, "exp": int(time.time()) + TOKEN_TTL}).encode())
+def make_token(user: str, role: str = "user") -> str:
+    fp = admin_fp() if role == "admin" else sharedlogin.fingerprint()
+    payload = _b64(json.dumps({"u": user, "r": role, "v": fp, "exp": int(time.time()) + TOKEN_TTL}).encode())
     sig = _b64(hmac.new(_secret(), payload.encode(), hashlib.sha256).digest())
     return f"{payload}.{sig}"
 
 
-def verify_token(token: str) -> Optional[str]:
+def verify_token(token: str) -> Optional[dict]:
+    """Signature + expiry + 'is this still the current password?' -> {"u", "r"} or None."""
     try:
         payload, sig = token.split(".", 1)
         good = _b64(hmac.new(_secret(), payload.encode(), hashlib.sha256).digest())
         if not hmac.compare_digest(sig, good):
             return None
         data = json.loads(_unb64(payload))
-        return data["u"] if data["exp"] > time.time() else None
+        if data["exp"] <= time.time():
+            return None
+        role = data.get("r", "user")
+        current = admin_fp() if role == "admin" else sharedlogin.fingerprint()
+        if data.get("v") != current:
+            return None
+        return {"u": data["u"], "r": role}
     except Exception:
         return None
 
 
-def require_login(authorization: Optional[str] = Header(default=None)) -> str:
-    """FastAPI dependency: 401 unless a valid 'Authorization: Bearer <token>' is sent."""
+def require_login(authorization: Optional[str] = Header(default=None)) -> dict:
+    """FastAPI dependency: 401 unless a valid 'Authorization: Bearer <token>' is sent. Returns {"u", "r"}."""
     if authorization and authorization.lower().startswith("bearer "):
-        user = verify_token(authorization[7:].strip())
-        if user:
-            return user
+        who = verify_token(authorization[7:].strip())
+        if who:
+            return who
     raise HTTPException(status_code=401, detail="Login করুন।")
 
 
-# ---- tiny in-memory rate limiter (best effort: resets when the serverless instance restarts)
+def require_admin(who: dict = Depends(require_login)) -> dict:
+    if who["r"] != "admin":
+        raise HTTPException(status_code=403, detail="শুধু admin এটা করতে পারবে।")
+    return who
+
+
+# ---- rate limiting: shared through the database when there is one (so it survives serverless restarts),
+#      otherwise a small in-memory counter.
 _hits: dict = {}
 
 
-def rate_limit(key: str, limit: int, window: int) -> bool:
-    """True if allowed. At most `limit` calls per `window` seconds for this key."""
+def _mem_limit(key, limit, window):
     now = time.time()
     arr = [t for t in _hits.get(key, []) if now - t < window]
     if len(arr) >= limit:
@@ -88,6 +122,16 @@ def rate_limit(key: str, limit: int, window: int) -> bool:
     arr.append(now)
     _hits[key] = arr
     return True
+
+
+def rate_limit(key: str, limit: int, window: int) -> bool:
+    """True if allowed. At most `limit` calls per `window` seconds for this key."""
+    if store.backend() == "redis":
+        try:
+            return store.incr_window("rl:" + key, window) <= limit
+        except store.StoreUnavailable:
+            pass
+    return _mem_limit(key, limit, window)
 
 
 def client_ip(request: Request) -> str:

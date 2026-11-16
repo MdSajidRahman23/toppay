@@ -40,6 +40,8 @@
     <nav class="tabs">
       <button id="tabCheck" class="tab active" type="button">✅ Check</button>
       <button id="tabLib" class="tab" type="button">📚 মেসেজ টেমপ্লেট</button>
+      <button id="tabStmt" class="tab" type="button">📄 Statement</button>
+      <button id="tabAdmin" class="tab hidden" type="button">⚙️ Admin</button>
       <button id="reset" class="ghost" type="button">🔄 নতুন কেস</button>
       <button id="logout" class="ghost" type="button">Logout</button>
     </nav>
@@ -70,8 +72,12 @@
       <section class="card">
         <h2><span class="num">১</span> মূল তথ্য</h2>
         <div class="grid">
+          <label>Total Product Amount (টাকা)
+            <input type="number" id="totalAmt" min="0" step="1" inputmode="numeric" placeholder="portal-এর Total" />
+            <small>লিখলে MRP নিজে থেকে হবে (Total − ১০%)</small>
+          </label>
           <label>MRP (টাকা)
-            <input type="number" name="mrp" min="0" step="1000" inputmode="numeric" />
+            <input type="number" name="mrp" min="0" step="1" inputmode="numeric" />
           </label>
           <div class="agebox">
             <label>Customer-এর বয়স (বছর)
@@ -82,6 +88,7 @@
               <input type="number" class="dob-d" placeholder="দিন" min="1" max="31" inputmode="numeric" />
               <input type="number" class="dob-m" placeholder="মাস" min="1" max="12" inputmode="numeric" />
               <input type="number" class="dob-y" placeholder="সাল" min="1900" max="2100" inputmode="numeric" />
+              <label class="calwrap" title="ক্যালেন্ডার থেকে বেছে নিন">📅<input type="date" class="dob-cal" min="1900-01-01" aria-label="জন্ম তারিখ ক্যালেন্ডার" /></label>
             </div>
             <small class="agehint"></small>
           </div>
@@ -91,13 +98,20 @@
           <label>Down payment %
             <input type="number" name="down_payment_pct" min="0" max="100" inputmode="numeric" />
           </label>
-          <label>সবচেয়ে ভালো ১ মাসের transaction
+          <label>সবচেয়ে ভালো ১ মাসের Cash-in <u>অথবা</u> Cash-out
             <input type="number" name="tx_1_month" min="0" inputmode="numeric" />
-            <small>Cash in + cash out মিলিয়ে, আবেদনের আগের শেষ ৭ দিন বাদে</small>
+            <small>যেটা বেশি সেটা (দুটো যোগ করবেন না)। গত ৩ মাসের যেকোনো ১ মাসে ২,০০০+ লাগবে। আবেদনের আগের শেষ ৭ দিন বাদে।</small>
           </label>
-          <label>৩ মাসের মোট transaction
+          <label>৩ মাসের মোট (Cash-in + Cash-out যোগ করে)
             <input type="number" name="tx_3_month" min="0" inputmode="numeric" />
-            <small>১ মাসের টা না জানলে শুধু এটা দিলেও হবে</small>
+            <small>শুধু MRP ৫০,০০০+ হলে লাগে</small>
+          </label>
+          <label>Statement কত মাস কভার করে?
+            <select name="stmt_months_covered">
+              <option value="">—</option><option value="3">৩ মাস (ঠিক আছে)</option>
+              <option value="2">২ মাস</option><option value="1">১ মাস</option><option value="0">০ (নেই)</option>
+            </select>
+            <small>Statement tab থেকে নিজে থেকেও বসতে পারে</small>
           </label>
         </div>
         <label class="check"><input type="checkbox" name="repeat_customer" /> Repeat customer (user tag আছে)</label>
@@ -115,6 +129,7 @@
               <input type="number" class="dob-d" placeholder="দিন" min="1" max="31" inputmode="numeric" />
               <input type="number" class="dob-m" placeholder="মাস" min="1" max="12" inputmode="numeric" />
               <input type="number" class="dob-y" placeholder="সাল" min="1900" max="2100" inputmode="numeric" />
+              <label class="calwrap" title="ক্যালেন্ডার থেকে বেছে নিন">📅<input type="date" class="dob-cal" min="1900-01-01" aria-label="জন্ম তারিখ ক্যালেন্ডার" /></label>
             </div>
             <small class="agehint"></small>
           </div>
@@ -236,6 +251,29 @@
         <label class="check"><input type="checkbox" name="outside_address_area" /> Residential/permanent address area-র বাইরে</label>
         <label class="check"><input type="checkbox" name="repeated_resubmit" /> BP বারবার বলার পরেও ডকুমেন্ট না দিয়ে resubmit করেছে</label>
       </section>
+
+      <section class="card picker">
+        <h2><span class="num">＋</span> Manual reason যোগ করুন</h2>
+        <p class="muted">Form থেকে যে reason আসে না, সেটা এখান থেকে খুঁজে যোগ করুন। একটি case-এ অনেকগুলো reason থাকতে পারে।</p>
+        <div class="grid">
+          <input type="search" id="pkQ" placeholder="খুঁজুন… (NID, statement, guarantor…)" />
+          <select id="pkSec"></select>
+        </div>
+        <div id="pkList" class="pklist"></div>
+      </section>
+
+      <section class="card noeval">
+        <h2><span class="num">📝</span> Case note</h2>
+        <p class="muted">শুধু এই browser-এ থাকে, server-এ যায় না। "নতুন কেস" চাপলে মুছে যায়।</p>
+        <textarea id="caseNotes" rows="3" maxlength="1500" placeholder="নিজের জন্য note…"></textarea>
+      </section>
+
+      <section class="card noeval">
+        <h2><span class="num">🕘</span> শেষ ২০টা case (এই PC-তে)</h2>
+        <p class="muted">শুধু সিদ্ধান্ত, reason ও ফর্মের সংখ্যা/টিক থাকে। নাম, NID, ফোন, note থাকে না।</p>
+        <div id="histList"></div>
+        <button id="histClear" class="mini danger" type="button">🗑 history মুছুন</button>
+      </section>
     </form>
 
     <!-- ================= RESULT ================= -->
@@ -253,6 +291,7 @@
         <div id="rejectsBox" class="card hidden"><h3>⛔ Reject-এর কারণ</h3><ul id="rejects"></ul></div>
         <div id="returnsBox" class="card hidden"><h3>↩️ Return-এর কারণ</h3><ul id="returns"></ul></div>
         <div id="actionsBox" class="card hidden"><h3>⚠️ যা করতে হবে</h3><ul id="actions"></ul></div>
+        <div id="dismissedBox" class="card dismissed hidden"><h3>🚫 বাদ দেওয়া reason</h3><p class="muted">এগুলো সিদ্ধান্তে ধরা হচ্ছে না। ভুল হলে ফিরিয়ে আনুন।</p><ul id="dismissed"></ul></div>
 
         <details class="card"><summary>✔ যা ঠিক আছে</summary><ul id="passed"></ul></details>
         <div id="internalBox" class="card internal hidden">
@@ -260,7 +299,16 @@
           <p class="muted">এগুলো BP-কে জানাবেন না।</p>
           <ul id="notes"></ul>
         </div>
-        <button id="copy" class="primary full" type="button">📋 সিদ্ধান্ত copy করুন</button>
+        <label class="orderlbl">Copy-র ক্রম
+          <select id="copyOrder">
+            <option value="severity">Reject → Return → করণীয়</option>
+            <option value="return_first">Return → করণীয় → Reject</option>
+            <option value="screen">Screen-এর ক্রম (auto, তারপর manual)</option>
+            <option value="manual_first">Manual আগে, তারপর auto</option>
+          </select>
+        </label>
+        <button id="copy" class="primary full" type="button">📋 সব reason copy করুন (BP-র জন্য)</button>
+        <p id="copyNote" class="muted"></p>
       </div>
       <p id="err" class="err hidden"></p>
     </aside>
@@ -271,10 +319,95 @@
     <div class="libbar card">
       <input id="q" type="search" placeholder="খুঁজুন… (যেমন: NID, স্টেটমেন্ট, ট্রেড লাইসেন্স, IMEI)" />
       <div id="chips" class="chips"></div>
-      <p class="muted">কার্ডে ক্লিক করলেই মেসেজ copy হবে। মাসের নাম আজকের তারিখ অনুযায়ী নিজে থেকে আপডেট হয়।</p>
+      <div class="libtools">
+        <button id="tplNew" class="mini hidden" type="button">➕ নতুন template (admin)</button>
+        <button id="tplExport" class="mini" type="button">⬇ আমার PC-র edit export</button>
+        <button id="tplImport" class="mini" type="button">⬆ import</button>
+        <input type="file" id="tplFile" accept="application/json" class="hidden" />
+      </div>
+      <p class="muted">কার্ডে ক্লিক করলে মেসেজ copy হবে। ✏️ দিয়ে edit করুন: "আমার PC" edit শুধু এই PC-তে থাকে, Admin-এর "সবার জন্য" edit সবাই দেখে। মাসের নাম নিজে থেকে আপডেট হয়।</p>
     </div>
     <div id="libList"></div>
   </div>
+
+  <!-- ================= STATEMENT CHECKER ================= -->
+  <div id="viewStmt" class="lib hidden">
+    <div class="card">
+      <h2>📄 Statement Checker (bKash / Nagad / Rocket / Bank PDF)</h2>
+      <p class="muted">PDF শুধু এই browser-এ খোলা হয়। PDF বা তার লেখা <b>কখনো server-এ যায় না</b>, কোথাও save-ও হয় না। Check form-এ শুধু হিসাব করা সংখ্যা (সেরা মাস, ৩ মাসের মোট, কত মাস কভার) যায়।</p>
+      <div class="grid">
+        <label>Customer-এর নাম (portal-এর মতো)
+          <input type="text" id="stCust" autocomplete="off" placeholder="যেমন: MD. FOKRUL HASAN" />
+        </label>
+        <label>আবেদনের তারিখ
+          <input type="date" id="stApp" />
+        </label>
+        <label>Customer-এর mobile (bKash password)
+          <input type="text" id="stCph" inputmode="numeric" autocomplete="off" placeholder="01XXXXXXXXX" />
+        </label>
+        <label>Guarantor-এর mobile (bKash password)
+          <input type="text" id="stGph" inputmode="numeric" autocomplete="off" placeholder="01XXXXXXXXX" />
+        </label>
+        <label class="wide">PDF বাছুন
+          <input type="file" id="stFile" accept="application/pdf,.pdf" />
+        </label>
+      </div>
+      <button id="stRun" class="primary" type="button">🔍 Statement যাচাই করুন</button>
+      <p id="stStatus" class="muted"></p>
+    </div>
+    <div id="stOut"></div>
+  </div>
+
+  <!-- ================= ADMIN ================= -->
+  <div id="viewAdmin" class="lib hidden">
+    <div id="admWarn" class="card hidden"></div>
+    <div class="card">
+      <h2>সবার জন্য একটি shared Login</h2>
+      <p class="muted" id="sharedNote">সব reviewer এই একটি ID/Password দিয়ে ঢুকবে। বদলালে পুরোনো login ১ মিনিটের মধ্যে বন্ধ হয়ে যাবে।</p>
+      <div class="grid">
+        <label>Shared ID
+          <input type="text" id="shU" autocapitalize="none" spellcheck="false" maxlength="30" placeholder="যেমন: toppay_team" />
+          <small>ইংরেজি অক্ষর, সংখ্যা, _ . - (৩-৩০ অক্ষর)</small>
+        </label>
+        <label>নতুন Password
+          <input type="text" id="shP" maxlength="60" placeholder="কমপক্ষে ৬ অক্ষর" />
+          <small><a href="#" id="shGen">🎲 নিজে থেকে বানান</a></small>
+        </label>
+      </div>
+      <button id="shSave" class="primary" type="button">Save করুন</button>
+      <p id="shStatus" class="muted"></p>
+    </div>
+    <div class="card">
+      <h2>Template edit</h2>
+      <p class="muted">"মেসেজ টেমপ্লেট" tab-এ প্রতিটি কার্ডে ✏️ আছে। Admin হিসেবে "সবার জন্য save" করলে সবাই refresh-এর পর নতুন লেখা দেখবে। নতুন template-ও সেখান থেকে যোগ করা যায়।</p>
+    </div>
+  </div>
+
+  <!-- ================= TEMPLATE EDITOR ================= -->
+  <dialog id="tplDlg" class="dlg">
+    <div>
+      <h3 id="dlgTitle">Template</h3>
+      <p class="muted" id="dlgInfo"></p>
+      <select id="dlgSec" class="hidden"></select>
+      <textarea id="dlgText" rows="7" maxlength="2000"></textarea>
+      <p class="muted" id="dlgPh"></p>
+      <p class="warn hidden" id="dlgWarn"></p>
+      <h4>Preview (copy করলে এটাই যাবে)</h4>
+      <div class="msgbox" id="dlgPreview"></div>
+      <p class="muted" id="dlgGlobalText"></p>
+      <div class="dlgbtns">
+        <button type="button" id="dlgLocal" class="primary">💻 শুধু আমার PC-তে save</button>
+        <button type="button" id="dlgGlobal" class="primary hidden">🌐 সবার জন্য save (admin)</button>
+        <button type="button" id="dlgResetLocal" class="mini">↩ আমার edit মুছুন</button>
+        <button type="button" id="dlgResetGlobal" class="mini hidden">↩ Built-in-এ ফেরত (admin)</button>
+        <button type="button" id="dlgHide" class="mini hidden">🙈 Users-দের কাছ থেকে লুকান (admin)</button>
+        <button type="button" id="dlgDelete" class="mini danger hidden">🗑 মুছুন (admin)</button>
+        <button type="button" id="dlgCopy" class="mini">📋 Copy</button>
+        <button type="button" id="dlgClose" class="mini">বন্ধ করুন</button>
+      </div>
+      <p class="muted" id="dlgMsg"></p>
+    </div>
+  </dialog>
 
   <!-- ================= SUGGESTION BOX ================= -->
   <section class="feedback">
@@ -294,6 +427,10 @@
   </section>
   </div><!-- /#app -->
 
+  <script src="vendor/pdfjs/pdf.min.js"></script>
+  <script src="js/statement-core.js"></script>
+  <script src="js/statement-pdf.js"></script>
+  <script src="js/statement-ui.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
