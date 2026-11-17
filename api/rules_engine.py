@@ -15,8 +15,10 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import policy
+
 # ----------------------------------------------------------------- CONFIG
-CONFIG = {
+DEFAULT_CONFIG = {
     "customer_age": (19, 62),
     "guarantor_age": (21, 62),
     # SOP: in the last 3 months at least ONE month needs a cash-in OR a cash-out of 2,000+ (each direction on its own,
@@ -40,6 +42,14 @@ CONFIG = {
     # MRP below 50,000 with down payment >= 40%: guarantor call can be short (internal note only).
     "dp40_short_guarantor_call": True,
 }
+
+CONFIG = DEFAULT_CONFIG   # kept for old imports/tests; the engine itself reads C() = the live (admin-editable) policy
+
+
+def C() -> dict:
+    """Live policy (defaults + what the admin saved). See policy.py."""
+    return policy.effective()
+
 
 PROFESSIONS = ["job_holder", "student", "businessman", "rider", "house_owner", "unemployed", "other"]
 
@@ -116,7 +126,7 @@ def _flag(v):
 
 def _ge(value, threshold):
     """value >= threshold, allowing the small money tolerance (e.g. 1,940 counts as 2,000)."""
-    return value is not None and value >= threshold - CONFIG["money_tolerance"]
+    return value is not None and value >= threshold - C()["money_tolerance"]
 
 
 def _fmt_age(a: float) -> str:
@@ -138,18 +148,18 @@ def _exempt_known(d):
     sal = _num(d.get("monthly_salary")) or 0
     dp = _num(d.get("down_payment_pct")) or 0
     return (
-        dp >= CONFIG["dp_exempt_pct"]
-        or _ge(tx3, CONFIG["tx3_exempt"])
+        dp >= C()["dp_exempt_pct"]
+        or _ge(tx3, C()["tx3_exempt"])
         or (d.get("profession") in ("job_holder", "student")
-            and d.get("salary_slip_submitted") is True and _ge(sal, CONFIG["salary_exempt"]))
+            and d.get("salary_slip_submitted") is True and _ge(sal, C()["salary_exempt"]))
     )
 
 
 def _dp_relax(d) -> bool:
     """MRP < 50,000 and down payment >= 40%: no need to ask the guarantor many questions (internal)."""
     mrp, dp = _num(d.get("mrp")), _num(d.get("down_payment_pct"))
-    return bool(CONFIG["dp40_short_guarantor_call"] and mrp is not None and mrp < CONFIG["high_mrp"]
-                and dp is not None and dp >= CONFIG["dp_exempt_pct"])
+    return bool(C()["dp40_short_guarantor_call"] and mrp is not None and mrp < C()["high_mrp"]
+                and dp is not None and dp >= C()["dp_exempt_pct"])
 
 
 def _outside_hours(dt_str, note):
@@ -161,8 +171,8 @@ def _outside_hours(dt_str, note):
             dt = datetime.fromisoformat(str(dt_str).replace("Z", ""))
         except ValueError:
             return None
-        start, end = CONFIG["business_hours"]
-        if dt.weekday() in CONFIG["weekend_days"]:
+        start, end = C()["business_hours"]
+        if dt.weekday() in C()["weekend_days"]:
             return "submitted on a weekend"
         if not (start <= dt.hour < end):
             return f"submitted outside business hours ({dt:%H:%M})"
@@ -193,12 +203,12 @@ def find_missing(d: dict) -> list[tuple[str, str]]:
     if d.get("guarantor_relation") == "spouse" and d.get("name_mismatch") is True and d.get("spouse_proof") is None:
         q.append(("spouse_proof", "Spouse-er jonno marriage certificate ba child-er NID/QR birth certificate ache?"))
 
-    if mrp is not None and mrp >= CONFIG["high_mrp"] and prof:
+    if mrp is not None and mrp >= C()["high_mrp"] and prof:
         dp = _num(d.get("down_payment_pct"))
         if prof in ("job_holder", "student", "businessman") and tx3 is None:
-            q.append(("tx_3_month", "MRP 50,000+; 3 mash-er total transaction (cash-in + cash-out jog kore) koto?"))
+            q.append(("tx_3_month", f"MRP {C()['high_mrp']:,}+; 3 mash-er total transaction (cash-in + cash-out jog kore) koto?"))
         if prof in ("rider", "house_owner") and dp is None:
-            if not (prof == "house_owner" and _ge(_num(d.get("rental_income")) or 0, CONFIG["rental_income_min"])):
+            if not (prof == "house_owner" and _ge(_num(d.get("rental_income")) or 0, C()["rental_income_min"])):
                 q.append(("down_payment_pct", "Down payment koto %?"))
         if prof == "house_owner" and _num(d.get("rental_income")) is None and dp is None:
             q.append(("rental_income", "Mashik rental income koto?"))
@@ -247,32 +257,32 @@ def evaluate_application(data: dict) -> dict:
         if _flag(d[field]):
             R(_r("reject", "flag:" + field, f"Red-flag checkbox ticked: {field}", FLAG_TID[field]))
     for who, p in (("Customer", prof), ("Guarantor", gprof)):
-        if p in NOT_SERVED:
+        if p in NOT_SERVED and p in C()["not_served_on"]:
             R(_r("reject", f"not_served:{who.lower()}", f"{who} is in a NOT SERVED category: {NOT_SERVED[p]}",
                  TID["not_served"], who=who, category=NOT_SERVED[p]))
     if _flag(d["outside_address_area"]):
         R(_r("reject", "outside_area", "Applicant is outside the served address area", TID["outside_area"]))
 
-    tol = CONFIG["age_tolerance_years"]
-    lo, hi = CONFIG["customer_age"]
+    tol = C()["age_tolerance_years"]
+    lo, hi = C()["customer_age"]
     if cage is not None:
         if lo <= cage <= hi:
             ok.append(f"Customer age {_fmt_age(cage)} is within {lo}-{hi}.")
         elif lo - tol <= cage <= hi + tol:
-            ok.append(f"Customer age {_fmt_age(cage)} accepted (within the 6-month margin of {lo}-{hi}).")
-            notes.append(f"Customer age {_fmt_age(cage)} is outside {lo}-{hi} by less than 6 months - accepted.")
+            ok.append(f"Customer age {_fmt_age(cage)} accepted (within the {tol * 12:.0f}-month margin of {lo}-{hi}).")
+            notes.append(f"Customer age {_fmt_age(cage)} is outside {lo}-{hi} by less than {tol * 12:.0f} months - accepted.")
         else:
             R(_r("reject", "customer_age", f"Customer age {_fmt_age(cage)} is outside {lo}-{hi}.",
                  TID["age_customer"], age=_fmt_age(cage), range=f"{lo}-{hi}"))
 
     # ---- 1b. Guarantor age -> RETURN: BP must change the guarantor
-    lo, hi = CONFIG["guarantor_age"]
+    lo, hi = C()["guarantor_age"]
     if gage is not None:
         if lo <= gage <= hi:
             ok.append(f"Guarantor age {_fmt_age(gage)} is within {lo}-{hi}.")
         elif lo - tol <= gage <= hi + tol:
-            ok.append(f"Guarantor age {_fmt_age(gage)} accepted (within the 6-month margin of {lo}-{hi}).")
-            notes.append(f"Guarantor age {_fmt_age(gage)} is outside {lo}-{hi} by less than 6 months - accepted.")
+            ok.append(f"Guarantor age {_fmt_age(gage)} accepted (within the {tol * 12:.0f}-month margin of {lo}-{hi}).")
+            notes.append(f"Guarantor age {_fmt_age(gage)} is outside {lo}-{hi} by less than {tol * 12:.0f} months - accepted.")
         elif gage > hi:
             R(_r("return", "guarantor_age", f"Guarantor age {_fmt_age(gage)} is above {hi} - guarantor must be changed.", TID["g_age_high"]))
         else:
@@ -280,7 +290,7 @@ def evaluate_application(data: dict) -> dict:
 
     # ---- 1c. Statement: 3 months covered, one month with cash-in OR cash-out >= 2,000
     months = _num(d["stmt_months_covered"])
-    need_m = CONFIG["statement_months"]
+    need_m = C()["statement_months"]
     if months is not None:
         if months < need_m:
             R(_r("return", "stmt_not_3_months", f"The statement covers only {months:.0f} of the last {need_m} months.",
@@ -289,17 +299,17 @@ def evaluate_application(data: dict) -> dict:
             ok.append(f"The statement covers the last {need_m} months.")
     best = _best_month(d)
     if best is not None:
-        if _ge(best, CONFIG["min_month_tx"]):
-            ok.append(f"At least one month has a cash-in or cash-out of BDT {CONFIG['min_month_tx']:,} or more (best month {best:,.0f}).")
+        if _ge(best, C()["min_month_tx"]):
+            ok.append(f"At least one month has a cash-in or cash-out of BDT {C()['min_month_tx']:,} or more (best month {best:,.0f}).")
         else:
             R(_r("return", "tx_month",
-                 f"No month reaches BDT {CONFIG['min_month_tx']:,} in cash-in or in cash-out (best month {best:,.0f}); "
-                 "the last 7 days before the application are not counted. Ask for another statement.",
+                 f"No month reaches BDT {C()['min_month_tx']:,} in cash-in or in cash-out (best month {best:,.0f}); "
+                 f"the last {C()['exclude_last_days']} days before the application are not counted. Ask for another statement.",
                  TID["tx_month"]))
-        if _ge(best, CONFIG["fast_track_tx"]):
+        if _ge(best, C()["fast_track_tx"]):
             fast_track = True
-    notes.append("Statement must cover the last 3 months; the last 7 days before application are not counted. "
-                 "Cash-in and cash-out are NOT added together for the 2,000 rule.")
+    notes.append(f"Statement must cover the last {C()['statement_months']} months; the last {C()['exclude_last_days']} days before application "
+                 f"are not counted. Cash-in and cash-out are NOT added together for the {C()['min_month_tx']:,} rule.")
 
     # ---- 1d. Relationship check during the call (nervous slips get one chance; no prompting)
     rc = d["relation_check"]
@@ -320,17 +330,17 @@ def evaluate_application(data: dict) -> dict:
              "hearing them - ask again so the customer answers on his own." + extra))
 
     # ---- 1e. Notes when a money threshold was met only thanks to the small BDT margin
-    mt = CONFIG["money_tolerance"]
-    pairs = [("Best month (cash-in or cash-out)", best, CONFIG["min_month_tx"]),
-             ("Best month (Fast-Track)", best, CONFIG["fast_track_tx"])]
-    if mrp is not None and mrp >= CONFIG["high_mrp"]:
+    mt = C()["money_tolerance"]
+    pairs = [("Best month (cash-in or cash-out)", best, C()["min_month_tx"]),
+             ("Best month (Fast-Track)", best, C()["fast_track_tx"])]
+    if mrp is not None and mrp >= C()["high_mrp"]:
         if prof in ("job_holder", "student", "businessman"):
-            pairs += [("3-month transaction", tx3, CONFIG["high_mrp_tx3"]),
-                      ("3-month transaction (exemption)", tx3, CONFIG["tx3_exempt"])]
+            pairs += [("3-month transaction", tx3, C()["high_mrp_tx3"]),
+                      ("3-month transaction (exemption)", tx3, C()["tx3_exempt"])]
         if prof in ("job_holder", "student"):
-            pairs.append(("Monthly salary", _num(d["monthly_salary"]), CONFIG["salary_exempt"]))
+            pairs.append(("Monthly salary", _num(d["monthly_salary"]), C()["salary_exempt"]))
         if prof == "house_owner":
-            pairs.append(("Rental income", _num(d["rental_income"]), CONFIG["rental_income_min"]))
+            pairs.append(("Rental income", _num(d["rental_income"]), C()["rental_income_min"]))
     for label, v, thr in pairs:
         if v is not None and thr - mt <= v < thr:
             notes.append(f"{label} {v:,.0f} is BDT {thr - v:,.0f} short of {thr:,} - accepted (margin: BDT {mt}).")
@@ -353,7 +363,7 @@ def evaluate_application(data: dict) -> dict:
         elif gprof:
             ok.append("Customer is unemployed, but the guarantor has a profession.")
     if _dp_relax(d):
-        notes.append("40%+ down payment on MRP below 50,000: no need to ask the guarantor many questions on the call - "
+        notes.append(f"{C()['dp_exempt_pct']}%+ down payment on MRP below {C()['high_mrp']:,}: no need to ask the guarantor many questions on the call - "
                      "keep it short (phone reachable, knows the customer). All document checks stay the same.")
     if _flag(d["repeat_customer"]):
         notes.append("Repeat customer: do not ask many questions on the call - do a short verification and finish.")
@@ -362,7 +372,7 @@ def evaluate_application(data: dict) -> dict:
     if _flag(d["salary_slip_submitted"]):
         why = _outside_hours(d["submission_datetime"], d["submission_note"])
         if why:
-            R(_r("return", "slip_hours", f"Salary slip {why} - cannot be verified (business hours: 9 AM - 5 PM, working days).",
+            R(_r("return", "slip_hours", f"Salary slip {why} - cannot be verified (business hours: {C()['business_hours'][0]}:00 - {C()['business_hours'][1]}:00, working days).",
                  TID["slip_hours"]))
         if _flag(d["salary_slip_handwritten"]):
             R(_r("return", "slip_bad", "Salary slip has a handwritten signature/seal - an official company seal is required.",
@@ -371,7 +381,7 @@ def evaluate_application(data: dict) -> dict:
     # ---- 3. NAME MISMATCH
     if _flag(d["name_mismatch"]):
         rel = d["guarantor_relation"]
-        if rel in FIRST_BLOOD:
+        if rel in C()["first_blood"]:
             ok.append(f"Name mismatch is acceptable: guarantor is first-blood relative ({rel}).")
         elif rel == "spouse":
             if d["spouse_proof"] in ("marriage_certificate", "child_nid", "qr_birth_certificate"):
@@ -385,8 +395,8 @@ def evaluate_application(data: dict) -> dict:
 
     # ---- 4. HIGH-MRP RULES
     if mrp is not None:
-        if mrp < CONFIG["high_mrp"]:
-            ok.append("MRP below 50,000 - basic requirements apply.")
+        if mrp < C()["high_mrp"]:
+            ok.append(f"MRP below {C()['high_mrp']:,} - basic requirements apply.")
             if _flag(d["statement_in_business_name"]) and d["trade_license_status"] != "valid":
                 R(_r("action", "lic_business_stmt", "Statement is in a business name - a VALID trade license is required.", TID["lic_none"]))
         else:
@@ -407,8 +417,8 @@ def evaluate_application(data: dict) -> dict:
 
 
 def _high_mrp(d, prof, tx3, dp, ok, reasons, notes):
-    CFG = CONFIG
-    sug = "Otherwise reduce MRP below 50,000."
+    CFG = C()
+    sug = f"Otherwise reduce MRP below {CFG['high_mrp']:,}."
     dp_ok = dp is not None and dp >= CFG["dp_exempt_pct"]
     R = reasons.append
 
@@ -417,10 +427,10 @@ def _high_mrp(d, prof, tx3, dp, ok, reasons, notes):
             if _ge(tx3, CFG["high_mrp_tx3"]):
                 ok.append(f"3-month transaction {tx3:,.0f} >= {CFG['high_mrp_tx3']:,}.")
             else:
-                R(_r("action", "tx3_15k", f"3-month transaction {tx3:,.0f} is below {CFG['high_mrp_tx3']:,}. Reduce MRP below 50,000.", TID["tx3_15k"]))
+                R(_r("action", "tx3_15k", f"3-month transaction {tx3:,.0f} is below {CFG['high_mrp_tx3']:,}. Reduce MRP below {CFG['high_mrp']:,}.", TID["tx3_15k"]))
         jid = d["job_id_status"]
         if _exempt_known(d):
-            ok.append("Job ID not required (down payment >= 40% / 3-month tx >= 30,000 / valid salary slip > 25,000).")
+            ok.append(f"Job ID not required (down payment >= {CFG['dp_exempt_pct']}% / 3-month tx >= {CFG['tx3_exempt']:,} / valid salary slip > {CFG['salary_exempt']:,}).")
         elif jid == "original":
             ok.append("Original Job ID card (hard copy) provided.")
         elif jid in ("work_photo", "visiting_card"):
@@ -433,10 +443,10 @@ def _high_mrp(d, prof, tx3, dp, ok, reasons, notes):
             if _ge(tx3, CFG["high_mrp_tx3"]):
                 ok.append(f"3-month transaction {tx3:,.0f} >= {CFG['high_mrp_tx3']:,}.")
             else:
-                R(_r("action", "tx3_15k", f"3-month transaction {tx3:,.0f} is below {CFG['high_mrp_tx3']:,}. Reduce MRP below 50,000.", TID["tx3_15k"]))
+                R(_r("action", "tx3_15k", f"3-month transaction {tx3:,.0f} is below {CFG['high_mrp_tx3']:,}. Reduce MRP below {CFG['high_mrp']:,}.", TID["tx3_15k"]))
         lic = d["trade_license_status"]
         if _exempt_known(d) and lic != "valid":
-            ok.append("Trade license not required (down payment >= 40% or 3-month tx >= 30,000).")
+            ok.append(f"Trade license not required (down payment >= {CFG['dp_exempt_pct']}% or 3-month tx >= {CFG['tx3_exempt']:,}).")
         elif lic == "valid":
             ok.append("Valid trade license provided.")
         elif lic == "expired":
@@ -446,22 +456,22 @@ def _high_mrp(d, prof, tx3, dp, ok, reasons, notes):
                 R(_r("action", "lic_expired", "License expired: take at least 2 shop photos with signboard and the owner at the cash counter.",
                      TID["lic_expired"]))
         elif lic in ("none",):
-            R(_r("action", "lic_none", "Valid trade license required (or down payment >= 40%, or 3-month tx >= 30,000). " + sug, TID["lic_none"]))
+            R(_r("action", "lic_none", f"Valid trade license required (or down payment >= {CFG['dp_exempt_pct']}%, or 3-month tx >= {CFG['tx3_exempt']:,}). " + sug, TID["lic_none"]))
     elif prof == "rider":
         if dp_ok:
-            ok.append("Rider: down payment >= 40%.")
+            ok.append(f"Rider: down payment >= {CFG['dp_exempt_pct']}%.")
         elif dp is not None:
-            R(_r("action", "rider", f"Rider needs 40%+ down payment (got {dp:.0f}%). Otherwise eligible for MRP below 50,000 only.", TID["rider"]))
+            R(_r("action", "rider", f"Rider needs {CFG['dp_exempt_pct']}%+ down payment (got {dp:.0f}%). Otherwise eligible for MRP below {CFG['high_mrp']:,} only.", TID["rider"]))
     elif prof == "house_owner":
         rent = _num(d["rental_income"])
         if _ge(rent, CFG["rental_income_min"]):
-            ok.append(f"House owner: rental income {rent:,.0f} >= {CFG['rental_income_min']:,} - may apply for MRP >= 50,000 (proof required).")
+            ok.append(f"House owner: rental income {rent:,.0f} >= {CFG['rental_income_min']:,} - may apply for MRP >= {CFG['high_mrp']:,} (proof required).")
         elif dp_ok:
-            ok.append("House owner: down payment >= 40%.")
+            ok.append(f"House owner: down payment >= {CFG['dp_exempt_pct']}%.")
         elif dp is not None or rent is not None:
-            R(_r("action", "landowner", "House owner needs rental-income proof >= 25,000/month OR 40%+ down payment. " + sug, TID["landowner"]))
+            R(_r("action", "landowner", f"House owner needs rental-income proof >= {CFG['rental_income_min']:,}/month OR {CFG['dp_exempt_pct']}%+ down payment. " + sug, TID["landowner"]))
     else:
-        R(_r("action", "prof_no_match", "Profession does not match any MRP >= 50,000 category. Reduce MRP below 50,000."))
+        R(_r("action", "prof_no_match", f"Profession does not match any MRP >= {CFG['high_mrp']:,} category. Reduce MRP below {CFG['high_mrp']:,}."))
 
 
 # ------------------------------------------------------------- status combination

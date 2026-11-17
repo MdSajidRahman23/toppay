@@ -16,6 +16,7 @@ from email.message import EmailMessage  # noqa: E402
 from fastapi import Depends, FastAPI, Header, HTTPException, Request  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
+import policy  # noqa: E402
 import sharedlogin  # noqa: E402
 import store  # noqa: E402
 import templates_store as ts  # noqa: E402
@@ -125,6 +126,46 @@ def shared_login_set(body: SharedLoginIn, request: Request, who: dict = Depends(
     except sharedlogin.LoginSettingError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True, **sharedlogin.info()}
+
+
+# ---------------------------------------------------------- policy (every number behind the rules; admin editable)
+class PolicyIn(BaseModel):
+    values: dict
+
+
+class PolicyResetIn(BaseModel):
+    keys: Optional[List[str]] = None      # None = reset everything
+
+
+@app.get("/api/policy")
+def policy_get(who: dict = Depends(require_login)):
+    """Any logged-in user gets the current values (the Statement Checker and the MRP box use them);
+    the admin also gets the field list, defaults and the change log."""
+    return policy.info(admin=who["r"] == "admin")
+
+
+@app.put("/api/admin/policy")
+def policy_set(body: PolicyIn, request: Request, who: dict = Depends(require_admin)):
+    _write_limit(who, request)
+    try:
+        diff = policy.save(body.values, admin_name())
+    except policy.PolicyError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except store.StoreUnavailable:
+        raise HTTPException(status_code=503, detail="Database-এ সংযোগ করা যাচ্ছে না।")
+    return {"ok": True, "changed": diff, **policy.info(admin=True)}
+
+
+@app.post("/api/admin/policy/reset")
+def policy_reset(body: PolicyResetIn, request: Request, who: dict = Depends(require_admin)):
+    _write_limit(who, request)
+    try:
+        diff = policy.reset(body.keys, admin_name())
+    except policy.PolicyError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except store.StoreUnavailable:
+        raise HTTPException(status_code=503, detail="Database-এ সংযোগ করা যাচ্ছে না।")
+    return {"ok": True, "changed": diff, **policy.info(admin=True)}
 
 
 # ---------------------------------------------------------- templates

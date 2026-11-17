@@ -6,6 +6,9 @@ All routes under `/api`. Auth: `Authorization: Bearer <token>` from `POST /api/l
 | `POST /api/login` `{username,password}` | public (rate-limited) | → `{token, role}` |
 | `GET /api/me` | login | role + set-up `warnings` (admin) |
 | `POST /api/check` `{data, manual:[{tid,kind?}], dismissed:[key]}` | login | evaluate a case. **Only template ids / keys are accepted for manual reasons — no free text.** |
+| `GET /api/policy` | login | current rule numbers (admin also gets field list, defaults, change log) |
+| `PUT /api/admin/policy` `{values:{key:value}}` | admin | change any number (age, min amount, fast-track, MRP limits, hours, first-blood relations, not-served jobs…). Validated; all-or-nothing |
+| `POST /api/admin/policy/reset` `{keys:[…]|null}` | admin | back to defaults |
 | `GET /api/templates` | login | layered templates (built-in → global admin edit) + `context` (month names) |
 | `POST /api/templates` `{text,section}` | admin | new global template |
 | `PUT /api/templates/{id}` `{text}` | admin | edit global text |
@@ -22,6 +25,9 @@ REJECTED > RETURNED > MORE INFO NEEDED > ACTION REQUIRED > APPROVED. Active manu
 
 ### Money rule (SOP)
 At least ONE of the last 3 months must have cash-in OR cash-out ≥ 2,000 (each direction on its own; tolerance 60). Fast-track ≥ 6,000. The 3-month total (in+out) is only for MRP ≥ 50,000. Last 7 days before the application are ignored. MRP = Total Product Amount × 0.9.
+
+## Quality Indicators
+`GET /api/templates` also returns `indicators` (official return/reject list from Quality_Indicators.xlsx, in sheet order, each with its template id). New texts are templates `qi.NN`; admin can edit them like any other. Placeholders `{g_age_min} {g_age_max} {c_age_min} {c_age_max} {min_tx} {fast_tx} {high_mrp} {dp_pct} {months}` follow the policy.
 
 ## Privacy
 Never stored on the server: NID, phone, photos, addresses, statements. Local template edits, notes and history live only in the browser (localStorage). The Statement Checker reads the PDF in the browser; only derived numbers reach the form.

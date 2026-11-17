@@ -15,6 +15,9 @@ from datetime import datetime, timedelta, timezone
 
 import store
 from templates_data import BUILTIN, TEMPLATES
+import indicators
+
+indicators.merge(TEMPLATES, BUILTIN)      # official Quality Indicator templates (qi.NN) join the library
 
 KEY = "toppay:tpl:global"
 SEQ = "toppay:tpl:seq"
@@ -36,7 +39,13 @@ def tpl_context(now: datetime | None = None) -> dict:
     idx = [((t.month - 1 - k) % 12) for k in (3, 2, 1)]
     en = [_MONTHS[i] for i in idx]
     bn = [_MONTHS_BN[i] for i in idx]
-    return {"m3": ", ".join(en), "m3_bn": ", ".join(bn), "m3_bn_sp": " ".join(bn), "m1_bn": bn[0], "m1": en[0]}
+    ctx = {"m3": ", ".join(en), "m3_bn": ", ".join(bn), "m3_bn_sp": " ".join(bn), "m1_bn": bn[0], "m1": en[0]}
+    try:
+        import policy
+        ctx.update(policy.template_context())      # {c_age_min} {g_age_max} {min_tx} ... follow the admin-edited policy
+    except Exception:  # never let a policy problem break the template library
+        pass
+    return ctx
 
 
 def placeholders(text: str) -> list:
@@ -159,7 +168,7 @@ def catalog(include_hidden: bool = False) -> dict:
                               "hidden": bool(rec.get("hidden")), "new": False, "changed": False, "engine": False,
                               "edited_by": rec.get("by"), "edited_at": rec.get("at")})
         sections.append({"id": s["id"], "title": s["title"], "kind": s["kind"], "items": items})
-    return {"sections": sections, "context": tpl_context()}
+    return {"sections": sections, "context": tpl_context(), "indicators": indicators.payload()}
 
 
 # ---- admin writes (the API layer checks the role and the rate limit first)

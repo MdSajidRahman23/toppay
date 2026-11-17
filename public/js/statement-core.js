@@ -169,7 +169,7 @@
     const covered = list.filter((p) => p.count > 0).length;
     return {
       months: list, best, total3: list.reduce((s, p) => s + p.in + p.out, 0), covered,
-      passMin: best >= c.minMonth - c.tolerance, passFast: best >= c.fastTrack - c.tolerance,
+      passMin: best >= c.minMonth - c.tolerance, passFast: best >= c.fastTrack - c.tolerance, excluded: c.excludeLastDays,
       first: dates[0] || null, last: dates[dates.length - 1] || null, cutoff,
     };
   }
@@ -241,7 +241,7 @@
   function analyze(input) {
     const lines = input.lines || [];
     const { rows, skipped } = parseRows(lines);
-    const sop = sopCheck(rows, input.appDate);
+    const sop = sopCheck(rows, input.appDate, input.cfg);
     const bal = balanceCheck(rows);
     const holder = findHolderName(lines);
     const provider = detectProvider(lines);

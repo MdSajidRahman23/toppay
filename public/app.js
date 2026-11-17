@@ -45,6 +45,7 @@ function showApp() {
   $("login").classList.add("hidden");
   $("app").classList.remove("hidden");
   ensureLib();
+  loadPolicy();
   renderHistory();
 }
 // fetch with the login token; a 401 sends the user back to the login screen
@@ -185,6 +186,9 @@ const LOCAL_KEY = "tp_local_tpl";
 let LOCAL = lsGet(LOCAL_KEY, {}) || {};   // id -> {text, base, at}   base = the global text when the edit was made
 let LIB = null, LIB_BY_ID = {}, ROLE = "user", ME = null;
 let activeSection = "all";
+let POLICY = null;   // numbers the admin can edit (GET /api/policy)
+async function loadPolicy() { try { POLICY = await api("/api/policy"); } catch { /* keep defaults */ } return POLICY; }
+const pv = (k, d) => (POLICY && POLICY.values && POLICY.values[k] !== undefined ? POLICY.values[k] : d);
 let LAST_CTX = null;
 
 const BN_MONTHS = ["জানুয়ারি", "ফেব্রুয়ারি", "মার্চ", "এপ্রিল", "মে", "জুন", "জুলাই", "আগস্ট", "সেপ্টেম্বর", "অক্টোবর", "নভেম্বর", "ডিসেম্বর"];
@@ -452,7 +456,7 @@ function resetCase() {
   fillForm({});
   manual = []; dismissed.clear(); FILLS = {}; CURRENT = null;
   $("caseNotes").value = "";
-  $("pkQ").value = ""; $("pkSec").value = "all";
+  $("pkQ").value = ""; $("pkSec").value = "all"; $("pkMode").value = "qi";
   $("nidHint").textContent = ""; $("imeiHint").textContent = "";
   if (window.TPStmtUI) TPStmtUI.reset();
   renderPicker();
@@ -770,10 +774,70 @@ function addManual(kind, it) {
   renderPicker(); evaluate();
 }
 
+function renderIndicators(list, q) {
+  let n = 0;
+  [["return", "↩ RETURN reasons (Quality Indicators)"], ["reject", "⛔ REJECT reasons (Quality Indicators)"]].forEach(([kind, title]) => {
+    const groups = (LIB.indicators && LIB.indicators[kind]) || [];
+    const wrap = document.createElement("div");
+    groups.forEach((g) => {
+      const rows = g.items.filter((x) => {
+        const it = LIB_BY_ID[x.tid];
+        return !q || x.label.toLowerCase().includes(q) || (it && shownText(it.it).toLowerCase().includes(q));
+      });
+      if (!rows.length) return;
+      const h = document.createElement("div");
+      h.className = "pkhead " + kind;
+      h.textContent = `${kind === "return" ? "Return" : "Reject"} · ${g.category}`;
+      wrap.appendChild(h);
+      rows.forEach((x) => {
+        n++;
+        const it = LIB_BY_ID[x.tid];
+        const row = document.createElement("div");
+        row.className = "pkrow";
+        const p = document.createElement("div");
+        p.className = "pktext";
+        const b = document.createElement("b");
+        b.textContent = `${x.n}. ${x.label}`;
+        p.appendChild(b);
+        if (it) {
+          const small = document.createElement("small");
+          small.style.display = "block";
+          small.textContent = shownText(it.it);
+          p.appendChild(small);
+        }
+        row.appendChild(p);
+        const btns = document.createElement("div");
+        btns.className = "rbtns";
+        const added = manual.find((m) => m.tid === x.tid);
+        if (!it) {
+          btns.textContent = "template পাওয়া যায়নি";
+        } else if (added) {
+          btns.appendChild(mkBtn("✔ যোগ করা আছে · সরান", "mini danger", () => { manual = manual.filter((m) => m.tid !== x.tid); renderPicker(); evaluate(); }));
+        } else {
+          btns.appendChild(mkBtn(kind === "return" ? "↩ Return যোগ" : "⛔ Reject যোগ", kind === "return" ? "mini" : "mini danger", () => addManual(kind, it.it)));
+        }
+        row.appendChild(btns);
+        wrap.appendChild(row);
+      });
+    });
+    if (wrap.children.length) {
+      const t = document.createElement("h3");
+      t.className = "libhead " + kind;
+      t.textContent = title;
+      list.appendChild(t);
+      list.appendChild(wrap);
+    }
+  });
+  if (!n) list.innerHTML = '<p class="muted">কিছু পাওয়া যায়নি।</p>';
+}
+
 function renderPicker() {
   const list = $("pkList");
   if (!LIB) { list.textContent = ""; return; }
   const q = $("pkQ").value.trim().toLowerCase();
+  const qi = $("pkMode").value === "qi" && LIB.indicators;
+  $("pkSec").classList.toggle("hidden", !!qi);
+  if (qi) { list.innerHTML = ""; renderIndicators(list, q); return; }
   const sec = $("pkSec").value || "all";
   list.innerHTML = "";
   let n = 0, more = false;
@@ -819,6 +883,7 @@ function renderPicker() {
 }
 $("pkQ").addEventListener("input", renderPicker);
 $("pkSec").addEventListener("change", renderPicker);
+$("pkMode").addEventListener("change", renderPicker);
 
 // ============================================================ tabs
 function showTab(which) {
@@ -956,6 +1021,7 @@ async function loadAdmin() {
       me.warnings.forEach((t) => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
       w.appendChild(ul);
     }
+    try { renderPolicy(await api("/api/policy")); } catch (e) { $("polNote").textContent = "❌ " + e.message; }
     const out = await api("/api/admin/shared-login");
     let t = out.display
       ? `এখন চালু আছে: ID "${out.display}" (${out.source === "env" ? "Vercel env থেকে" : "admin panel থেকে"})।`
@@ -965,6 +1031,92 @@ async function loadAdmin() {
     if (out.display && !$("shU").value) $("shU").value = out.display;
   } catch (e) { note.textContent = "❌ " + e.message; }
 }
+
+// ----- policy editor: the form is built from the field list the server sends
+let POL_SPEC = null;
+function polInput(spec, v) {
+  const wrap = document.createElement("label");
+  wrap.className = "pol";
+  const t = document.createElement("span");
+  t.textContent = spec.label + (spec.unit ? ` (${spec.unit})` : "");
+  wrap.appendChild(t);
+  let inp;
+  if (spec.type === "bool") {
+    inp = document.createElement("input"); inp.type = "checkbox"; inp.checked = !!v;
+  } else if (spec.type === "multi") {
+    inp = document.createElement("div"); inp.className = "polmulti";
+    Object.entries(spec.choices).forEach(([k, name]) => {
+      const l = document.createElement("label"); l.className = "check";
+      const c = document.createElement("input"); c.type = "checkbox"; c.value = k; c.checked = v.map(String).includes(String(k));
+      l.appendChild(c); l.appendChild(document.createTextNode(" " + name)); inp.appendChild(l);
+    });
+  } else {
+    inp = document.createElement("input"); inp.type = "number"; inp.value = v;
+    inp.min = spec.min; inp.max = spec.max; inp.step = spec.type === "float" ? "0.05" : "1";
+  }
+  inp.dataset.key = spec.key;
+  wrap.appendChild(inp);
+  if (spec.help) { const s = document.createElement("small"); s.textContent = spec.help; wrap.appendChild(s); }
+  return wrap;
+}
+function polRead() {
+  const out = {};
+  POL_SPEC.forEach((s) => {
+    const el = $("polForm").querySelector(`[data-key="${s.key}"]`);
+    if (!el) return;
+    if (s.type === "bool") out[s.key] = el.checked;
+    else if (s.type === "multi") {
+      const vals = [...el.querySelectorAll("input:checked")].map((c) => c.value);
+      out[s.key] = s.key === "weekend_days" ? vals.map(Number) : vals;
+    } else out[s.key] = el.value === "" ? null : Number(el.value);
+  });
+  return out;
+}
+function renderPolicy(info) {
+  POLICY = info;
+  POL_SPEC = info.spec;
+  const box = $("polForm");
+  box.innerHTML = "";
+  let grp = null, grid = null;
+  info.spec.forEach((s) => {
+    if (s.group !== grp) {
+      grp = s.group;
+      const h = document.createElement("h4"); h.textContent = grp; box.appendChild(h);
+      grid = document.createElement("div"); grid.className = "grid"; box.appendChild(grid);
+    }
+    const w = polInput(s, info.values[s.key]);
+    if (info.changed.includes(s.key)) w.classList.add("changed");
+    grid.appendChild(w);
+  });
+  const n = info.changed.length;
+  $("polNote").textContent = (n ? `${n}টি সেটিং default থেকে আলাদা (হলুদ চিহ্ন)। ` : "সব সেটিং default-এ আছে। ") +
+    (info.by ? `শেষ বদল: ${info.by}, ${fmtDate(info.at)}। ` : "") +
+    (info.storage === null ? "⚠️ Database যুক্ত নেই, তাই বদলানো যাবে না।" : "Save করলে সবার জন্য সাথে সাথে কাজ করবে।");
+  const NAMES = Object.fromEntries(info.spec.map((s) => [s.key, s.label]));
+  $("polLog").innerHTML = "";
+  (info.log || []).slice(0, 15).forEach((e) => {
+    const d = document.createElement("div");
+    d.textContent = `${fmtDate(e.at)} · ${e.by}${e.reset ? " (reset)" : ""}: ` +
+      Object.entries(e.changes).map(([k, [a, b]]) => `${NAMES[k] || k}: ${JSON.stringify(a)} → ${JSON.stringify(b)}`).join("; ");
+    $("polLog").appendChild(d);
+  });
+  if (!(info.log || []).length) $("polLog").textContent = "এখনো কোনো বদল নেই।";
+}
+$("polSave").addEventListener("click", async () => {
+  const st = $("polStatus");
+  try {
+    const out = await api("/api/admin/policy", "PUT", { values: polRead() });
+    renderPolicy(out);
+    st.textContent = Object.keys(out.changed).length ? "✅ Save হয়েছে — এখন থেকে নতুন নিয়ম চলবে।" : "কিছু বদলায়নি।";
+    if (LIB) { await ensureLib(true); }
+    evaluate();
+  } catch (e) { st.textContent = "❌ " + e.message; }
+});
+$("polReset").addEventListener("click", async () => {
+  if (!confirm("সব সংখ্যা SOP-র default মানে ফিরে যাবে। নিশ্চিত?")) return;
+  try { renderPolicy(await api("/api/admin/policy/reset", "POST", { keys: null })); $("polStatus").textContent = "✅ Default-এ ফিরেছে।"; evaluate(); }
+  catch (e) { $("polStatus").textContent = "❌ " + e.message; }
+});
 
 $("shSave").addEventListener("click", async () => {
   const st = $("shStatus");
@@ -988,7 +1140,7 @@ $("shGen").addEventListener("click", (e) => {
 $("totalAmt").addEventListener("input", () => {
   const v = Number($("totalAmt").value);
   if (!v) return;
-  form.elements.mrp.value = Math.round(v * 0.9);
+  form.elements.mrp.value = Math.round(v * pv("mrp_factor", 0.9));
   form.elements.mrp.dispatchEvent(new Event("input", { bubbles: true }));
 });
 
@@ -1009,5 +1161,6 @@ window.TPApp = {
   lib() { return LIB; },
   shownText(tid) { const x = LIB_BY_ID[tid]; return x ? shownText(x.it) : ""; },
   today: dhakaToday,
+  policy: () => (POLICY && POLICY.values) || {},
 };
 if (window.TPStmtUI) TPStmtUI.init(window.TPApp);

@@ -256,8 +256,12 @@
         <h2><span class="num">＋</span> Manual reason যোগ করুন</h2>
         <p class="muted">Form থেকে যে reason আসে না, সেটা এখান থেকে খুঁজে যোগ করুন। একটি case-এ অনেকগুলো reason থাকতে পারে।</p>
         <div class="grid">
+          <select id="pkMode">
+            <option value="qi">⭐ Quality Indicators (official তালিকা)</option>
+            <option value="all">সব template</option>
+          </select>
           <input type="search" id="pkQ" placeholder="খুঁজুন… (NID, statement, guarantor…)" />
-          <select id="pkSec"></select>
+          <select id="pkSec" class="hidden"></select>
         </div>
         <div id="pkList" class="pklist"></div>
       </section>
@@ -376,6 +380,18 @@
       </div>
       <button id="shSave" class="primary" type="button">Save করুন</button>
       <p id="shStatus" class="muted"></p>
+    </div>
+    <div class="card" id="polCard">
+      <h2>নীতি / Rules (সব সংখ্যা এখান থেকে বদলান)</h2>
+      <p class="muted" id="polNote">বয়স, ন্যূনতম লেনদেন, MRP সীমা, down payment, অফিস সময় ইত্যাদি। Save করলে সব user-এর জন্য সাথে সাথে (সর্বোচ্চ ১৫ সেকেন্ডে) কাজ করবে — redeploy লাগবে না।</p>
+      <div id="polForm"></div>
+      <div class="dlgbtns">
+        <button id="polSave" class="primary" type="button">💾 নীতি Save করুন</button>
+        <button id="polReset" class="mini danger" type="button">↩ সব Default-এ ফেরত</button>
+      </div>
+      <p id="polStatus" class="muted"></p>
+      <details><summary>🕘 শেষ বদলগুলো</summary><div id="polLog" class="muted"></div></details>
+      <p class="muted">⚠️ Template-এর লেখায় সংখ্যা সরাসরি লেখা থাকলে সেটা নিজে বদলাবে না। তাই লেখায় {g_age_min} {g_age_max} {c_age_min} {c_age_max} {min_tx} {fast_tx} {high_mrp} {dp_pct} {months} ব্যবহার করুন।</p>
     </div>
     <div class="card">
       <h2>Template edit</h2>

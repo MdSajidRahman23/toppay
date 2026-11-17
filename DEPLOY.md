@@ -17,7 +17,7 @@ Browser: http://localhost:8000  (local-e USER_ID/USER_PASS env na dile admin pan
 ```
 pip install pytest httpx
 python -m pytest tests -q
-node --test tests/js
+node --test tests/js/statement-core.test.js
 ```
 
 ## 4. Git

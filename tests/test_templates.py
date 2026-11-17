@@ -13,7 +13,7 @@ from templates_data import BUILTIN, TEMPLATES
 def test_ids_are_unique_and_follow_the_pattern():
     ids = [it["id"] for s in TEMPLATES["sections"] for it in s["items"]]
     assert len(ids) == len(set(ids)) >= 130
-    assert all(re.fullmatch(r"[a-z]{3}\.\d{2}", i) for i in ids)
+    assert all(re.fullmatch(r"[a-z]{2,3}\.\d{2}", i) for i in ids)
 
 
 def test_reject_templates_are_english_and_no_html_anywhere():

@@ -38,6 +38,13 @@ def run(p, label, viewport):
     check(f"{label}: 1500 gives a return reason", pg.locator("#returns li").count() >= 1)
     check(f"{label}: status badge shown", pg.locator("#badge").inner_text().strip() != "")
 
+    # Quality Indicators view is the default: 21 return + 26 reject rows
+    pg.wait_for_selector("#pkList .pkrow")
+    check(f"{label}: 47 quality indicators listed", pg.locator("#pkList .pkrow").count() == 47, pg.locator("#pkList .pkrow").count())
+    pg.locator("#pkList .pkrow", has_text="Customer rude").locator("button").click()
+    pg.wait_for_timeout(800)
+    check(f"{label}: reject indicator -> REJECTED status", "REJECTED" in pg.inner_text("#badge"), pg.inner_text("#badge"))
+    pg.locator("#pkList .pkrow", has_text="Customer rude").locator("button").click()   # remove again
     # manual reason + never sends text to the server
     pg.fill("#pkQ", "NID")
     pg.wait_for_timeout(300)
@@ -94,7 +101,28 @@ def run(p, label, viewport):
     pg.screenshot(path=f"/tmp/e2e_{label}.png")
     b.close()
 
+def admin_policy(p):
+    """Admin edits the minimum amount in the panel; the check page must follow immediately."""
+    au, ap = os.environ.get("E2E_ADMIN_USER"), os.environ.get("E2E_ADMIN_PASS")
+    if not au:
+        print("SKIP admin policy test (E2E_ADMIN_USER not set)"); return
+    b = p.chromium.launch(); pg = b.new_page(viewport={"width": 1280, "height": 900})
+    pg.goto(URL); pg.fill("#lu", au); pg.fill("#lp", ap); pg.click("#lbtn"); pg.wait_for_selector("#app:not(.hidden)")
+    pg.click("#tabAdmin"); pg.wait_for_selector("#polForm input[data-key=min_month_tx]")
+    check("admin: policy form built", pg.locator("#polForm [data-key]").count() >= 20, pg.locator("#polForm [data-key]").count())
+    pg.fill("#polForm input[data-key=min_month_tx]", "3000"); pg.click("#polSave"); pg.wait_for_timeout(800)
+    check("admin: policy saved", "Save হয়েছে" in pg.inner_text("#polStatus"), pg.inner_text("#polStatus"))
+    pg.click("#tabCheck")
+    pg.select_option("select[name=profession]", "businessman"); pg.fill("input[name=mrp]", "30000"); pg.fill("input[name=tx_1_month]", "2500")
+    pg.wait_for_timeout(900)
+    check("admin: 2500 now returned (min 3000)", pg.locator("#returns li").count() >= 1)
+    pg.click("#tabAdmin"); pg.wait_for_selector("#polReset")
+    pg.once("dialog", lambda d: d.accept()); pg.click("#polReset"); pg.wait_for_timeout(800)
+    check("admin: reset to default", pg.input_value("#polForm input[data-key=min_month_tx]") == "2000")
+    b.close()
+
 with sync_playwright() as p:
+    admin_policy(p)
     run(p, "desktop", {"width": 1280, "height": 900})
     run(p, "mobile375", {"width": 375, "height": 800})
 print("FAILS:", fails)

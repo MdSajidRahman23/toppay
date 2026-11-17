@@ -20,7 +20,8 @@ def clean_env(tmp_path, monkeypatch):
     monkeypatch.setenv("ADMIN_PASS", "Boss#Pass1")
     for k in ("USER_ID", "USER_PASS", "VERCEL"):
         monkeypatch.delenv(k, raising=False)
-    import auth, sharedlogin, templates_store
+    import auth, policy, sharedlogin, templates_store
+    policy.invalidate()
     auth._hits.clear()
     sharedlogin._cache.update(t=0.0, rec=None, fp=None)
     templates_store.invalidate()

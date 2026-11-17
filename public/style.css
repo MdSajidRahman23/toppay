@@ -350,3 +350,8 @@ table.mt tr.good td { background: #ecfdf5; }
 .stt th,.stt td{border:1px solid var(--line,#ddd);padding:.3rem .5rem;text-align:right;font-size:.9rem}
 .stt th:first-child,.stt td:first-child{text-align:left}
 .sig.warn{color:#b45309}.sig.ok{color:#15803d}
+
+/* policy editor */
+label.pol{display:flex;flex-direction:column;gap:.25rem}
+label.pol.changed span{background:#fff3b0;padding:0 .25rem;border-radius:3px}
+.polmulti{display:flex;flex-wrap:wrap;gap:.4rem .9rem}

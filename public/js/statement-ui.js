@@ -29,7 +29,7 @@
       card.appendChild(el("p", "", `${t} — Statement-এ: "${a.holder}"`));
     } else card.appendChild(el("p", "muted", a.holder ? "Customer-এর নাম দিলে নাম মিলিয়ে দেখা হবে।" : "Statement থেকে account-holder-এর নাম পাওয়া যায়নি।"));
 
-    card.appendChild(el("p", "", `Row পাওয়া গেছে: ${a.rows}টি (পড়তে না পারা: ${a.skipped}টি)। তারিখের সীমা: শেষ ৭ দিন বাদ (${a.sop.cutoff}-এর পরের লেনদেন ধরা হয়নি)।`));
+    card.appendChild(el("p", "", `Row পাওয়া গেছে: ${a.rows}টি (পড়তে না পারা: ${a.skipped}টি)। তারিখের সীমা: শেষ ${a.sop.excluded} দিন বাদ (${a.sop.cutoff}-এর পরের লেনদেন ধরা হয়নি)।`));
     const tb = el("table", "stt");
     const head = el("tr"); ["মাস", "Cash-in", "Cash-out", "লেনদেন"].forEach((h) => head.appendChild(el("th", "", h)));
     tb.appendChild(head);
@@ -39,7 +39,7 @@
       tb.appendChild(tr);
     });
     card.appendChild(tb);
-    card.appendChild(el("p", "", `সেরা মাস (cash-in বা cash-out, যোগ নয়): ৳${fmt(a.sop.best)} — ${a.sop.passMin ? "✅ ২,০০০ নিয়ম পূরণ (৬০ টাকা tolerance সহ)" : "❌ ২,০০০ নিয়ম পূরণ হয়নি"}${a.sop.passFast ? " · 🔒 ৬,০০০+ (fast-track)" : ""}`));
+    card.appendChild(el("p", "", `সেরা মাস (cash-in বা cash-out, যোগ নয়): ৳${fmt(a.sop.best)} — ${a.sop.passMin ? "✅ ন্যূনতম লেনদেনের নিয়ম পূরণ (tolerance সহ)" : "❌ ন্যূনতম লেনদেনের নিয়ম পূরণ হয়নি"}${a.sop.passFast ? " · 🔒 ৬,০০০+ (fast-track)" : ""}`));
     card.appendChild(el("p", "", `৩ মাসের মোট (in+out): ৳${fmt(a.sop.total3)} · ${a.sop.covered}/৩ মাসে লেনদেন আছে`));
 
     card.appendChild(el("h4", "", "Authenticity ইঙ্গিত (প্রমাণ নয়)"));
@@ -67,7 +67,9 @@
     $("stRun").disabled = true; status("পড়া হচ্ছে… (শুধু এই browser-এ)");
     try {
       const { lines, meta } = await root.TPStmtPdf.extract(await f.arrayBuffer(), pws);
-      const a = root.TPStmt.analyze({ lines, meta, customerName: $("stCust").value.trim(), appDate: app0 });
+      const p = app.policy();
+      const cfg = { minMonth: p.min_month_tx, fastTrack: p.fast_track_tx, tolerance: p.money_tolerance, months: p.statement_months, excludeLastDays: p.exclude_last_days };
+      const a = root.TPStmt.analyze({ lines, meta, customerName: $("stCust").value.trim(), appDate: app0, cfg });
       last = a;
       render(a, app0);
       status("✅ হয়ে গেছে।");
