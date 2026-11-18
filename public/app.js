@@ -962,6 +962,7 @@ $("loginForm").addEventListener("submit", async (e) => {
     $("lp").value = "";
     applyRole(out.role);
     showApp();
+    applyPendingCase();
   } catch (err) {
     showLogin("❌ " + err.message);
   } finally {
@@ -976,11 +977,34 @@ $("logout").addEventListener("click", () => {
   showLogin("");
 });
 
+// ---------- "open in full checker" link from the browser extension: #case=<base64url json> (numbers/flags only, no personal data)
+function readCaseHash() {
+  const m = /^#case=([A-Za-z0-9_-]+)$/.exec(location.hash || "");
+  if (!m) return null;
+  try {
+    const b = m[1].replace(/-/g, "+").replace(/_/g, "/");
+    const obj = JSON.parse(decodeURIComponent(escape(atob(b + "=".repeat((4 - (b.length % 4)) % 4)))));
+    history.replaceState(null, "", location.pathname + location.search);   // never leave it in the address bar / history
+    return obj && typeof obj === "object" ? obj : null;
+  } catch { return null; }
+}
+let PENDING_CASE = readCaseHash();
+function applyPendingCase() {
+  if (!PENDING_CASE) return;
+  const c = PENDING_CASE; PENDING_CASE = null;
+  const allowed = new Set(Array.from(form.elements).map((e) => e.name).filter(Boolean));
+  const data = {};
+  Object.entries(c.data || {}).forEach(([k, v]) => { if (allowed.has(k) && (v === null || ["string", "number", "boolean"].includes(typeof v))) data[k] = v; });
+  fillForm(data);
+  manual = (Array.isArray(c.manual) ? c.manual : []).filter((m) => m && typeof m.tid === "string" && ["return", "reject"].includes(m.kind)).slice(0, 40).map((m) => ({ tid: m.tid, kind: m.kind }));
+  updateVisibility(); renderPicker(); evaluate();
+}
+
 (async function boot() {
   if (!getToken()) { showLogin(""); return; }
   try {
     const r = await fetch("/api/me", { headers: { Authorization: "Bearer " + getToken() } });
-    if (r.ok) { ME = await r.json(); applyRole(ME.role); showApp(); } else { setToken(null); showLogin(""); }
+    if (r.ok) { ME = await r.json(); applyRole(ME.role); showApp(); applyPendingCase(); } else { setToken(null); showLogin(""); }
   } catch { showLogin("Server-এর সাথে যোগাযোগ করা যাচ্ছে না।"); }
 })();
 

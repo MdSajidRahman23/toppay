@@ -11,6 +11,10 @@ NEW = {
     "qi.01": ("guarantor", "জামিনদারের বয়স {g_age_min}–{g_age_max} বছরের মধ্যে নয়। অনুগ্রহ করে জামিনদার পরিবর্তন করুন।"),
     "qi.02": ("address", "কাস্টমারের অন্য লোন অ্যাপ/ইনস্টলমেন্টের প্রমাণ দিতে হবে। যে নম্বর দিয়ে TopPay-তে আবেদন করেছেন সেই নম্বর দিয়ে ওই অ্যাপে login করে (১) Login interface ও (২) Paid off & Unpaid হিস্ট্রির স্ক্রিনশট জমা দিন। স্ক্রিনশটে নাম, নম্বর ও লেনদেনের বিবরণ থাকতে হবে।"),
     "qi.03": ("address", "কাস্টমারের Live photo স্পষ্ট নয়। মুখ পরিষ্কার দেখা যায় এমন আলোতে BP-এর সাথে নতুন ছবি তুলে Onsite photos অপশনে সাবমিট করুন।"),
+    # ---- used by the browser extension's automatic checks (not part of the official sheet)
+    "qi.25": ("nid", "কাস্টমারের NID কার্ডের ছবির নম্বরের সাথে সিস্টেমে দেওয়া NID নম্বরের মিল নেই। সঠিক NID নম্বর দিন এবং NID কার্ডের স্পষ্ট ছবি জমা দিন।"),
+    "qi.26": ("contact", "কাস্টমার, জামিনদার, ফ্যামিলি ও কলিগের ফোন নম্বর আলাদা আলাদা হতে হবে। একই নম্বর একাধিক জায়গায় দেওয়া যাবে না — সঠিক নম্বর দিয়ে রিসাবমিট করুন।"),
+    "qi.27": ("contact", "ফ্যামিলি ফোন নম্বর দেওয়া হয়নি। অনুগ্রহ করে কাস্টমারের ফ্যামিলি ফোন নম্বর সাবমিট করুন।"),
     # ---- reject (English)
     "qi.04": ("reject", "Customer is suspected of fraud. The front and back sides of the customer's NID card do not match."),
     "qi.05": ("reject", "Customer is suspected of fraud. The customer's NID card has no signature/fingerprint."),
