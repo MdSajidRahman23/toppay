@@ -197,3 +197,25 @@ def test_missing_questions():
     r = evaluate_application({})
     assert {k for k, _ in r["missing"]} >= {"customer_age", "profession", "mrp", "tx_1_month"}
     assert r["status"] == STATUS_NEED_INFO
+
+
+# ---------------------------------------------------------------- MRP < 50k vs MRP >= 50k statement rules
+def test_low_mrp_passes_with_any_one_month_2000_even_if_other_months_zero():
+    r = ev(mrp=45000, tx_1_month=2000, tx_3_month=2000, stmt_months_covered=3)
+    assert "tx_month" not in keys(r)
+    assert r["status"] == STATUS_APPROVED
+
+
+def test_high_mrp_uses_15k_3month_rule_not_2k_1month_rule():
+    # MRP >= 50,000: 15,000+ over 3 months passes for job_holder/student/businessman without needing 2,000 in 1 month
+    r = evaluate_application({"customer_age": 30, "profession": "job_holder", "mrp": 60000, "tx_3_month": 15000, "job_id_status": "original"})
+    assert "tx_month" not in keys(r)
+    assert "tx3_15k" not in keys(r)
+    assert r["status"] == STATUS_APPROVED
+
+    # With 60 BDT tolerance: 14,940 passes, 14,939 fails
+    r_tol = evaluate_application({"customer_age": 30, "profession": "businessman", "mrp": 55000, "tx_3_month": 14940, "trade_license_status": "valid"})
+    assert r_tol["status"] == STATUS_APPROVED
+
+    r_low = evaluate_application({"customer_age": 30, "profession": "job_holder", "mrp": 60000, "tx_3_month": 12000, "job_id_status": "original"})
+    assert "tx3_15k" in keys(r_low)

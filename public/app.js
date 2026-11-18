@@ -979,11 +979,20 @@ $("logout").addEventListener("click", () => {
 
 // ---------- "open in full checker" link from the browser extension: #case=<base64url json> (numbers/flags only, no personal data)
 function readCaseHash() {
-  const m = /^#case=([A-Za-z0-9_-]+)$/.exec(location.hash || "");
+  const raw = (location.hash || "").replace(/^#/, "");
+  if (!raw.startsWith("case=")) return null;
+  const parts = raw.split("&");
+  const m = /^case=([A-Za-z0-9_-]+)$/.exec(parts[0]);
   if (!m) return null;
   try {
     const b = m[1].replace(/-/g, "+").replace(/_/g, "/");
     const obj = JSON.parse(decodeURIComponent(escape(atob(b + "=".repeat((4 - (b.length % 4)) % 4)))));
+    if (parts.length > 1) {
+      const sp = new URLSearchParams(parts.slice(1).join("&"));
+      const initStmt = {};
+      ["stCust", "stGuar", "stRel", "stCph", "stGph"].forEach((k) => { if (sp.get(k)) initStmt[k] = sp.get(k); });
+      if (Object.keys(initStmt).length) window.TPStmtInitData = initStmt;
+    }
     history.replaceState(null, "", location.pathname + location.search);   // never leave it in the address bar / history
     return obj && typeof obj === "object" ? obj : null;
   } catch { return null; }

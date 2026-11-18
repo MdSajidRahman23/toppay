@@ -196,7 +196,8 @@ def find_missing(d: dict) -> list[tuple[str, str]]:
         q.append(("mrp", "MRP koto taka?"))
     if prof == "unemployed" and d.get("guarantor_profession") is None:
         q.append(("guarantor_profession", "Customer beker - guarantor-er peshha ki? (peshha thakte hobe)"))
-    if best is None:
+    is_high_mrp = mrp is not None and mrp >= C()["high_mrp"]
+    if best is None and not is_high_mrp:
         q.append(("tx_1_month", "Shobcheye bhalo 1 mash-er bKash/bank transaction koto? (cash-in ba cash-out - jeta boro, jog kore na)"))
     if d.get("name_mismatch") is True and d.get("guarantor_relation") is None:
         q.append(("guarantor_relation", "Name mismatch ache - guarantor customer-er ke hoy? (father/mother/brother/sister/spouse/onno)"))
@@ -298,14 +299,16 @@ def evaluate_application(data: dict) -> dict:
         else:
             ok.append(f"The statement covers the last {need_m} months.")
     best = _best_month(d)
+    is_high_mrp = mrp is not None and mrp >= C()["high_mrp"]
     if best is not None:
-        if _ge(best, C()["min_month_tx"]):
-            ok.append(f"At least one month has a cash-in or cash-out of BDT {C()['min_month_tx']:,} or more (best month {best:,.0f}).")
-        else:
-            R(_r("return", "tx_month",
-                 f"No month reaches BDT {C()['min_month_tx']:,} in cash-in or in cash-out (best month {best:,.0f}); "
-                 f"the last {C()['exclude_last_days']} days before the application are not counted. Ask for another statement.",
-                 TID["tx_month"]))
+        if not is_high_mrp:
+            if _ge(best, C()["min_month_tx"]):
+                ok.append(f"At least one month has a cash-in or cash-out of BDT {C()['min_month_tx']:,} or more (best month {best:,.0f}).")
+            else:
+                R(_r("return", "tx_month",
+                     f"No month reaches BDT {C()['min_month_tx']:,} in cash-in or in cash-out (best month {best:,.0f}); "
+                     f"the last {C()['exclude_last_days']} days before the application are not counted. Ask for another statement.",
+                     TID["tx_month"]))
         if _ge(best, C()["fast_track_tx"]):
             fast_track = True
     notes.append(f"Statement must cover the last {C()['statement_months']} months; the last {C()['exclude_last_days']} days before application "

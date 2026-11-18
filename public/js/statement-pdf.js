@@ -1,5 +1,4 @@
-/* statement-pdf.js - reads a PDF with pdf.js IN THE BROWSER and returns {lines, meta}. Nothing is uploaded.
-   Needs window.pdfjsLib (vendor/pdfjs/pdf.min.js). Not DOM-dependent otherwise. */
+/* statement-pdf.js - reads a PDF with pdf.js IN THE BROWSER and returns {lines, structuredRows, meta}. Nothing is uploaded. */
 (function (root) {
   "use strict";
 
@@ -10,24 +9,26 @@
     return lib;
   }
 
-  // text items -> lines: group by y (page by page), then order by x
-  function itemsToLines(items, tol) {
+  function itemsToRows(items, tol) {
     const rows = [];
     items.forEach((it) => {
       if (!it.str || !it.str.trim()) return;
       const y = it.transform[5], x = it.transform[4];
       let row = rows.find((r) => Math.abs(r.y - y) <= tol);
       if (!row) { row = { y, parts: [] }; rows.push(row); }
-      row.parts.push({ x, s: it.str });
+      row.parts.push({ x, s: it.str, fontName: it.fontName || "" });
     });
     rows.sort((a, b) => b.y - a.y);
-    return rows.map((r) => r.parts.sort((a, b) => a.x - b.x).map((p) => p.s).join("  ").replace(/\s{3,}/g, "  ").trim());
+    rows.forEach((r) => r.parts.sort((a, b) => a.x - b.x));
+    return rows;
   }
 
-  // number of "%%EOF" markers ~ number of saved revisions (incremental saves add one each time)
+  function rowsToLines(rows) {
+    return rows.map((r) => r.parts.map((p) => p.s).join("  ").replace(/\s{3,}/g, "  ").trim());
+  }
+
   function countRevisions(bytes) {
     let n = 0;
-    const needle = [0x25, 0x25, 0x45, 0x4f, 0x46];
     for (let i = 0; i <= bytes.length - 5; i++) {
       if (bytes[i] === 0x25 && bytes[i + 1] === 0x25 && bytes[i + 2] === 0x45 && bytes[i + 3] === 0x4f && bytes[i + 4] === 0x46) n++;
     }
@@ -51,34 +52,70 @@
     throw err;
   }
 
-  /* extract(arrayBuffer, [passwords]) -> {lines, meta, pages} */
   async function extract(buffer, passwords) {
     const lib = setup();
     const bytes = new Uint8Array(buffer);
-    const { doc } = await openWithPasswords(lib, bytes, passwords || []);
+    const { doc, used } = await openWithPasswords(lib, bytes, passwords || []);
     const lines = [];
+    const structuredRows = [];
     let images = 0, chars = 0;
-    const fonts = new Set();
+    const fontIds = new Set();
+    const realFonts = new Set();
+
     for (let p = 1; p <= doc.numPages; p++) {
       const page = await doc.getPage(p);
       const tc = await page.getTextContent();
-      tc.items.forEach((it) => { chars += (it.str || "").length; if (it.fontName) fonts.add(it.fontName); });
-      lines.push(...itemsToLines(tc.items, 3));
       try {
         const ops = await page.getOperatorList();
         const O = lib.OPS;
-        ops.fnArray.forEach((f) => { if (f === O.paintImageXObject || f === O.paintInlineImageXObject || f === O.paintJpegXObject) images++; });
-      } catch { /* image counting is optional */ }
+        ops.fnArray.forEach((f) => {
+          if (f === O.paintImageXObject || f === O.paintInlineImageXObject || f === O.paintJpegXObject) images++;
+        });
+      } catch { /* optional */ }
+
+      tc.items.forEach((it) => {
+        chars += (it.str || "").length;
+        if (it.fontName) {
+          fontIds.add(it.fontName);
+          try {
+            const fo = page.commonObjs.get(it.fontName);
+            if (fo && fo.name) realFonts.add(String(fo.name));
+          } catch { /* font obj not resolved */ }
+        }
+      });
+
+      const pageRows = itemsToRows(tc.items, 2.8);
+      pageRows.forEach((r) => {
+        structuredRows.push({
+          page: p,
+          y: r.y,
+          parts: r.parts.map((pt) => ({ x: pt.x, s: pt.s })),
+          text: r.parts.map((pt) => pt.s).join("  ").replace(/\s{3,}/g, "  ").trim(),
+        });
+      });
+      lines.push(...rowsToLines(pageRows));
     }
+
     let info = {};
     try { info = (await doc.getMetadata()).info || {}; } catch { /* no metadata */ }
     const meta = {
-      producer: info.Producer || "", creator: info.Creator || "", creationDate: info.CreationDate || "", modDate: info.ModDate || "",
-      revisions: countRevisions(bytes), pages: doc.numPages, images, fonts: fonts.size, textChars: chars,
+      producer: info.Producer || "",
+      creator: info.Creator || "",
+      author: info.Author || "",
+      title: info.Title || "",
+      creationDate: info.CreationDate || "",
+      modDate: info.ModDate || "",
+      revisions: countRevisions(bytes),
+      pages: doc.numPages,
+      images,
+      fonts: fontIds.size,
+      fontNames: [...realFonts],
+      textChars: chars,
+      unlockedWith: used || "",
     };
-    return { lines, meta, pages: doc.numPages };
+    return { lines, structuredRows, meta, pages: doc.numPages };
   }
 
-  root.TPStmtPdf = { extract, itemsToLines, countRevisions };
+  root.TPStmtPdf = { extract, itemsToRows, countRevisions };
   if (typeof module === "object" && module.exports) module.exports = root.TPStmtPdf;
 })(typeof self !== "undefined" ? self : this);
