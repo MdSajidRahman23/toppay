@@ -160,6 +160,8 @@
               <option value="">—</option>
               <option value="father">বাবা (father)</option>
               <option value="mother">মা (mother)</option>
+              <option value="son">ছেলে (son)</option>
+              <option value="daughter">মেয়ে (daughter)</option>
               <option value="brother">ভাই (brother)</option>
               <option value="sister">বোন (sister)</option>
               <option value="spouse">স্বামী/স্ত্রী (spouse)</option>
@@ -351,6 +353,8 @@
             <option value="">— নির্বাচন করুন —</option>
             <option value="father">বাবা (Father)</option>
             <option value="mother">মা (Mother)</option>
+            <option value="son">ছেলে (Son)</option>
+            <option value="daughter">মেয়ে (Daughter)</option>
             <option value="brother">ভাই (Brother)</option>
             <option value="sister">বোন (Sister)</option>
             <option value="spouse">স্বামী/স্ত্রী (Spouse)</option>
@@ -367,6 +371,30 @@
         </label>
         <label>Guarantor-এর mobile (bKash password)
           <input type="text" id="stGph" inputmode="numeric" autocomplete="off" placeholder="01XXXXXXXXX" />
+        </label>
+        <label>Customer NID পিতার নাম (Father/Brother/Sister যাচাই)
+          <input type="text" id="stCustFather" autocomplete="off" placeholder="ঐচ্ছিক — সম্পর্ক যাচাইয়ে" />
+        </label>
+        <label>Customer NID মাতার নাম (Mother/Brother/Sister যাচাই)
+          <input type="text" id="stCustMother" autocomplete="off" placeholder="ঐচ্ছিক — সম্পর্ক যাচাইয়ে" />
+        </label>
+        <label>Guarantor NID পিতার নাম (Son/Daughter/Brother/Sister)
+          <input type="text" id="stGuarFather" autocomplete="off" placeholder="ঐচ্ছিক — সম্পর্ক যাচাইয়ে" />
+        </label>
+        <label>Guarantor NID মাতার নাম (Son/Daughter/Brother/Sister)
+          <input type="text" id="stGuarMother" autocomplete="off" placeholder="ঐচ্ছিক — সম্পর্ক যাচাইয়ে" />
+        </label>
+        <label>Wife-এর NID-তে স্বামীর নাম (Wife হলে ও থাকলে)
+          <input type="text" id="stGuarHusband" autocomplete="off" placeholder="স্বামীর নাম না থাকলে ফাঁকা রাখুন" />
+        </label>
+        <label>Wife প্রমাণ (স্বামীর নাম NID-তে না থাকলে)
+          <select id="stSpouseProof">
+            <option value="">— নির্বাচন করুন —</option>
+            <option value="marriage_certificate">Marriage Certificate</option>
+            <option value="child_nid">সন্তানের NID</option>
+            <option value="qr_birth_certificate">সন্তানের Birth Certificate</option>
+            <option value="none">কিছু নেই</option>
+          </select>
         </label>
         <label class="wide">PDF বাছুন
           <input type="file" id="stFile" accept="application/pdf,.pdf" />

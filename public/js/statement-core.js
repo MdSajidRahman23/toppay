@@ -16,7 +16,8 @@
     excludeLastDays: 7,
   };
 
-  const FIRST_BLOOD = new Set(["father", "mother", "brother", "sister"]);
+  const FIRST_BLOOD = new Set(["father", "mother", "son", "daughter", "brother", "sister"]);
+  const ALLOWED_GUARANTOR_RELATIONS = new Set(["father", "mother", "son", "daughter", "brother", "sister", "spouse"]);
 
   /* ------------------------------------------------------------ names */
   const BN = {
@@ -26,7 +27,7 @@
     "ত":"t","থ":"th","দ":"d","ধ":"dh","ন":"n","প":"p","ফ":"f","ব":"b","ভ":"v","ম":"m","য":"j","র":"r","ল":"l","শ":"sh","ষ":"sh","স":"s","হ":"h",
     "ড়":"r","ঢ়":"r","য়":"y","ৎ":"t","ং":"ng","ঃ":"","ঁ":"","্":""
   };
-  const TITLES_STRICT = new Set(["md", "mo", "mohd", "mst", "mrs", "mr", "ms", "miss"]);
+  const TITLES_STRICT = new Set(["md", "mo", "mohd", "mst", "mrs", "mr", "ms", "miss", "late", "alhaj", "haji"]);
 
   function translit(s) {
     let out = "";
@@ -34,7 +35,9 @@
     return out;
   }
   function nameTokens(s) {
-    const t = translit(s).toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
+    const cleaned = String(s || "")
+      .replace(/মোঃ|মোসাঃ|মোসা\.|মো\.|মিসেস|মিস্টার|মিঃ|মৃত/g, " ");
+    const t = translit(cleaned).toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
     return t.filter((w) => !TITLES_STRICT.has(w));
   }
   const vowelless = (w) => w.replace(/[aeiouy]/g, "").replace(/(.)\1+/g, "$1");
@@ -45,16 +48,98 @@
       dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
     return dp[a.length][b.length];
   }
-  function wordMatch(a, b) {
+
+  /* Strict bKash / Nagad username vs NID name match:
+     - Honorific titles (Md, Mst, Mrs, Mr, Ms, Miss, etc.) are ignored.
+     - Passes ONLY if total alphabet mismatch across the name is <= 1.
+     - If > 1 alphabet mismatches, returns { ok: false, level: "mismatch", diff, problem } explaining exact issue. */
+  function strictNameMatch(nidName, stmtName) {
+    const A = nameTokens(nidName);
+    const B = nameTokens(stmtName);
+    if (!A.length || !B.length) {
+      return { ok: false, score: 0, level: "mismatch", diff: 99, problem: "নাম পাওয়া যায়নি।" };
+    }
+
+    const pairs = [];
+    const usedA = new Set();
+    const usedB = new Set();
+    const allEdges = [];
+    for (let i = 0; i < A.length; i++) {
+      for (let j = 0; j < B.length; j++) {
+        allEdges.push({ i, j, d: lev(A[i], B[j]) });
+      }
+    }
+    allEdges.sort((x, y) => x.d - y.d || x.i - y.i || x.j - y.j);
+    for (const e of allEdges) {
+      if (usedA.has(e.i) || usedB.has(e.j)) continue;
+      usedA.add(e.i);
+      usedB.add(e.j);
+      pairs.push({ nidWord: A[e.i], stmtWord: B[e.j], d: e.d });
+    }
+
+    const missingInStmt = A.filter((_, i) => !usedA.has(i));
+    const extraInStmt = B.filter((_, j) => !usedB.has(j));
+
+    let totalAlphabetDiff = pairs.reduce((s, p) => s + p.d, 0);
+    for (const w of missingInStmt) totalAlphabetDiff += w.length;
+    for (const w of extraInStmt) totalAlphabetDiff += w.length;
+
+    if (totalAlphabetDiff <= 1) {
+      const note = totalAlphabetDiff === 1
+        ? (() => {
+            const p = pairs.find((x) => x.d === 1);
+            return p ? `১টি অক্ষর অমিল ("${p.stmtWord}" ↔ "${p.nidWord}") — অনুমোদিত` : "১টি অক্ষর অমিল — অনুমোদিত";
+          })()
+        : null;
+      return {
+        ok: true,
+        score: totalAlphabetDiff === 0 ? 1 : 0.95,
+        level: "match",
+        diff: totalAlphabetDiff,
+        note,
+        problem: null,
+      };
+    }
+
+    const problems = [];
+    for (const p of pairs) {
+      if (p.d > 0) {
+        problems.push(`"${p.stmtWord}" বনাম NID-তে "${p.nidWord}" (${p.d}টি অক্ষর ভিন্ন)`);
+      }
+    }
+    if (missingInStmt.length) {
+      problems.push(`NID-র "${missingInStmt.join(" ")}" অংশটি Statement-এ নেই`);
+    }
+    if (extraInStmt.length) {
+      problems.push(`Statement-এ অতিরিক্ত অংশ আছে: "${extraInStmt.join(" ")}"`);
+    }
+
+    const problemStr = `মোট ${totalAlphabetDiff}টি অক্ষর অমিল (সর্বোচ্চ ১টি অনুমোদিত): ${problems.join("; ")}`;
+    return {
+      ok: false,
+      score: Math.max(0, Math.round((1 - totalAlphabetDiff / Math.max(A.join("").length, B.join("").length, 1)) * 100) / 100),
+      level: "mismatch",
+      diff: totalAlphabetDiff,
+      problem: problemStr,
+    };
+  }
+
+  /* Lenient name matching for family/relation NID checks (Father/Mother/Husband):
+     - Ignores titles like Mrs, Mr, Mst, Md (e.g. "Mrs Sufia Begum" == "Sufia Begum").
+     - Allows spelling differences ("banan vul hole problem nai"). */
+  function relationWordMatch(a, b) {
     if (a === b) return 1;
-    if (a.length === 1 || b.length === 1) return a[0] === b[0] ? 0.6 : 0;
-    if (vowelless(a) === vowelless(b) && vowelless(a).length >= 2) return 0.9;
+    if (a.length === 1 || b.length === 1) return a[0] === b[0] ? 0.75 : 0;
+    if (vowelless(a) === vowelless(b) && vowelless(a).length >= 2) return 0.95;
     const d = lev(a, b);
-    if (d <= 1 && Math.min(a.length, b.length) >= 4) return 0.85;
-    if (d <= 2 && Math.min(a.length, b.length) >= 7) return 0.75;
+    const maxL = Math.max(a.length, b.length);
+    if (d <= 1) return 0.9;
+    if (d <= 2 && maxL >= 5) return 0.85;
+    if (d / maxL <= 0.34) return 0.8;
     return 0;
   }
-  function nameMatch(a, b) {
+
+  function relationNameMatch(a, b) {
     const A = nameTokens(a), B = nameTokens(b);
     if (!A.length || !B.length) return { ok: false, score: 0, level: "mismatch" };
     const [short, long] = A.length <= B.length ? [A, B] : [B, A];
@@ -62,17 +147,197 @@
     let sum = 0;
     for (const w of short) {
       let best = 0, bi = -1;
-      long.forEach((x, i) => { if (used.has(i)) return; const s = wordMatch(w, x); if (s > best) { best = s; bi = i; } });
+      long.forEach((x, i) => {
+        if (used.has(i)) return;
+        const s = relationWordMatch(w, x);
+        if (s > best) { best = s; bi = i; }
+      });
       if (bi >= 0) used.add(bi);
       sum += best;
     }
     const score = Math.round((sum / short.length) * 100) / 100;
-    const level = score >= 0.85 ? "match" : score >= 0.5 ? "partial" : "mismatch";
-    return { ok: level === "match", score, level };
+    const ok = score >= 0.8;
+    return { ok, score, level: ok ? "match" : "mismatch" };
+  }
+
+  function nameMatch(a, b) {
+    return strictNameMatch(a, b);
+  }
+
+  /* Verify Customer & Guarantor Relationship rules */
+  function verifyGuarantorRelation(opts) {
+    const o = opts || {};
+    const rel = String(o.relation || "").toLowerCase().trim();
+    const custName = String(o.customerName || "").trim();
+    const custFather = String(o.customerFather || "").trim();
+    const custMother = String(o.customerMother || "").trim();
+    const guarName = String(o.guarantorName || "").trim();
+    const guarFather = String(o.guarantorFather || "").trim();
+    const guarMother = String(o.guarantorMother || "").trim();
+    const guarHusband = String(o.guarantorHusband || "").trim();
+    const spouseProof = String(o.spouseProof || "").trim();
+
+    if (!rel) {
+      return { status: "missing", ok: null, returnTid: null, text: "Guarantor-এর সম্পর্ক নির্বাচন করুন।" };
+    }
+
+    if (!ALLOWED_GUARANTOR_RELATIONS.has(rel)) {
+      return {
+        status: "not_allowed",
+        ok: false,
+        returnTid: "stm.28",
+        text: "❌ গ্রহণযোগ্য নয় (RETURN): রক্তের সম্পর্ক (Father, Mother, Son, Daughter, Brother, Sister) এবং Wife বাদে অন্য কারো Statement গ্রহণযোগ্য নয়।",
+      };
+    }
+
+    if (rel === "father" || rel === "mother") {
+      const label = rel === "father" ? "Father" : "Mother";
+      const targetParent = rel === "father" ? custFather : custMother;
+      if (!targetParent || !guarName) {
+        return {
+          status: "need_check",
+          ok: null,
+          returnTid: null,
+          text: `ℹ️ ${label} যাচাই: Customer-এর NID-র ${label} নামের সাথে Guarantor-এর NID নাম মিলিয়ে দেখুন (বানান ভুল বা Mrs/Md থাকলে সমস্যা নেই)।`,
+        };
+      }
+      const m = relationNameMatch(targetParent, guarName);
+      if (m.ok) {
+        return {
+          status: "match",
+          ok: true,
+          returnTid: null,
+          text: `✅ ${label} সম্পর্ক মিলেছে: Guarantor-এর নাম ("${guarName}") Customer-এর NID-র ${label} নামের ("${targetParent}") সাথে মিলেছে।`,
+        };
+      }
+      return {
+        status: "mismatch",
+        ok: false,
+        returnTid: "stm.28",
+        text: `❌ ${label} নাম অমিল: Guarantor-এর NID নাম ("${guarName}") Customer-এর NID-র ${label} নামের ("${targetParent}") সাথে মেলেনি।`,
+      };
+    }
+
+    if (rel === "son" || rel === "daughter") {
+      const label = rel === "son" ? "Son" : "Daughter";
+      if (!custName || (!guarFather && !guarMother)) {
+        return {
+          status: "need_check",
+          ok: null,
+          returnTid: null,
+          text: `ℹ️ ${label} যাচাই: Customer-এর নাম Guarantor-এর NID-র Father অথবা Mother-এর জায়গায় আছে কিনা দেখুন (বানান ভুল বা Mrs/Md থাকলে সমস্যা নেই)।`,
+        };
+      }
+      const mf = guarFather ? relationNameMatch(custName, guarFather) : { ok: false };
+      const mm = guarMother ? relationNameMatch(custName, guarMother) : { ok: false };
+      if (mf.ok || mm.ok) {
+        const matchedSide = mf.ok ? `Father ("${guarFather}")` : `Mother ("${guarMother}")`;
+        return {
+          status: "match",
+          ok: true,
+          returnTid: null,
+          text: `✅ ${label} সম্পর্ক মিলেছে: Customer-এর নাম ("${custName}") Guarantor-এর NID-র ${matchedSide}-এর সাথে মিলেছে।`,
+        };
+      }
+      return {
+        status: "mismatch",
+        ok: false,
+        returnTid: "stm.28",
+        text: `❌ ${label} নাম অমিল: Customer-এর নাম ("${custName}") Guarantor-এর NID-র Father ("${guarFather || "—"}") বা Mother ("${guarMother || "—"}") কারো সাথে মেলেনি।`,
+      };
+    }
+
+    if (rel === "spouse") {
+      if (guarHusband) {
+        if (!custName) {
+          return {
+            status: "need_check",
+            ok: null,
+            returnTid: null,
+            text: `ℹ️ Wife যাচাই: Wife-এর NID-তে স্বামীর নাম ("${guarHusband}") আছে — Customer-এর NID নামের সাথে মিলিয়ে দেখুন।`,
+          };
+        }
+        const mh = relationNameMatch(custName, guarHusband);
+        if (mh.ok) {
+          return {
+            status: "match",
+            ok: true,
+            returnTid: null,
+            text: `✅ Wife সম্পর্ক মিলেছে: Wife-এর NID-তে স্বামীর নাম ("${guarHusband}") Customer-এর নামের ("${custName}") সাথে মিলেছে।`,
+          };
+        }
+        return {
+          status: "mismatch",
+          ok: false,
+          returnTid: "stm.16",
+          text: `❌ Wife-এর NID-তে স্বামীর নাম অমিল: Wife-এর NID-তে স্বামীর নাম "${guarHusband}", কিন্তু Customer-এর নাম "${custName}"।`,
+        };
+      }
+      if (spouseProof && spouseProof !== "none") {
+        const proofLabel = {
+          marriage_certificate: "Marriage Certificate",
+          child_nid: "সন্তানের NID",
+          qr_birth_certificate: "সন্তানের Birth Certificate",
+        }[spouseProof] || spouseProof;
+        return {
+          status: "match_proof",
+          ok: true,
+          returnTid: null,
+          text: `✅ Wife প্রমাণ সংযুক্ত (${proofLabel}): ডকুমেন্টে স্বামী-স্ত্রী উভয়ের নাম আছে কিনা নিশ্চিত হয়ে পাস দিন।`,
+        };
+      }
+      return {
+        status: "need_spouse_proof",
+        ok: false,
+        returnTid: "stm.16",
+        text: "⚠️ Wife-এর NID-তে স্বামীর নাম নেই: Marriage Certificate অথবা তাদের সন্তানের NID / Birth Certificate চাইতে হবে (সেখানে স্বামী-স্ত্রী উভয়ের নাম আছে কিনা দেখতে হবে)।",
+      };
+    }
+
+    if (rel === "brother" || rel === "sister") {
+      const label = rel === "brother" ? "Brother" : "Sister";
+      if ((!custFather && !custMother) || (!guarFather && !guarMother)) {
+        return {
+          status: "need_check",
+          ok: null,
+          returnTid: null,
+          text: `ℹ️ ${label} যাচাই: Customer ও Guarantor দুজনের NID-তে বাবা ও মায়ের নাম একই আছে কিনা দেখুন (Mrs/Md বা বানান ভুল থাকলে সমস্যা নেই)।`,
+        };
+      }
+      const fOk = custFather && guarFather ? relationNameMatch(custFather, guarFather).ok : null;
+      const mOk = custMother && guarMother ? relationNameMatch(custMother, guarMother).ok : null;
+      if (fOk === false || mOk === false) {
+        const parts = [];
+        if (fOk === false) parts.push(`পিতার নাম অমিল ("${custFather}" ≠ "${guarFather}")`);
+        if (mOk === false) parts.push(`মাতার নাম অমিল ("${custMother}" ≠ "${guarMother}")`);
+        return {
+          status: "mismatch",
+          ok: false,
+          returnTid: "stm.28",
+          text: `❌ ${label} সম্পর্ক অমিল: দুজনের বাবা-মায়ের নাম এক হতে হবে — ${parts.join(", ")}।`,
+        };
+      }
+      if (fOk === true && mOk === true) {
+        return {
+          status: "match",
+          ok: true,
+          returnTid: null,
+          text: `✅ ${label} সম্পর্ক মিলেছে: দুজনের বাবা ("${custFather}") ও মায়ের ("${custMother}") নাম একই আছে।`,
+        };
+      }
+      return {
+        status: "need_check",
+        ok: null,
+        returnTid: null,
+        text: `ℹ️ ${label} যাচাই: একজনের নাম মিলেছে, বাবা ও মা উভয়ের নাম দুই NID-তেই মিলিয়ে নিন।`,
+      };
+    }
+
+    return { status: "unknown", ok: null, returnTid: null, text: "" };
   }
 
   /* ------------------------------------------------------------ amounts & dates */
-  function toAscii(s) { return String(s || "").replace(/[০-৯]/g, (d) => "০১২৩৪৫৬৭৮৯".indexOf(d)); }
+  function toAscii(s) { return String(s == null ? "" : s).replace(/[০-৯]/g, (d) => "০১২৩৪৫৬৭৮৯".indexOf(d)); }
   function parseAmount(s) {
     const t = toAscii(s).replace(/[,\s৳]|tk|bdt/gi, "");
     if (!/^-?\d+(\.\d{1,2})?$/.test(t)) return null;
@@ -102,19 +367,18 @@
     return null;
   }
 
-  /* ------------------------------------------------------------ provider & bKash specifics */
+  /* ------------------------------------------------------------ provider & bKash/Nagad specifics */
   const PROVIDERS = [
-    { id: "bkash", re: /bkash/i, verified: true },
-    { id: "nagad", re: /nagad/i, verified: false },
-    { id: "rocket", re: /rocket|dutch[\s-]*bangla/i, verified: false },
-    { id: "bank", re: /bank/i, verified: false },
+    { id: "bkash", re: /bkash/i, verified: true, fullCheck: true },
+    { id: "nagad", re: /nagad/i, verified: true, fullCheck: true },
+    { id: "rocket", re: /rocket|dutch[\s-]*bangla/i, verified: false, fullCheck: false },
+    { id: "bank", re: /\bbank\b|islami|brac|city\s*bank|eastern|prime|mutual\s*trust|sonali|janata|agrani|rupali|pubali|uttara|ific|ncc|one\s*bank|standard\s*chartered|hsbc|ab\s*bank|southeast|mercantile|jamuna|shahjalal|exim|social\s*islami|al[\s-]*arafah|first\s*security|premier\s*bank|dhaka\s*bank|midland|modhumoti|nrb|sbac|padma|shimanto|citizens|bengal\s*commercial|community\s*bank|global\s*islami|union\s*bank|meghna/i, verified: false, fullCheck: false },
   ];
   function detectProvider(lines) {
     const head = lines.slice(0, 35).join(" ");
-    return PROVIDERS.find((p) => p.re.test(head)) || { id: "unknown", verified: false };
+    return PROVIDERS.find((p) => p.re.test(head)) || { id: "bank", verified: false, fullCheck: false };
   }
 
-  /* Forbidden keywords ONLY checked on bKash statements */
   const BKASH_FORBIDDEN = [
     { key: "palmpay", label: "PalmPay / Palm", re: /\bpalm\s*pay\b|\bpalmpay\b/i },
     { key: "shohoz", label: "Shohoz", re: /\bshohoz\b/i },
@@ -130,7 +394,6 @@
     return hits;
   }
 
-  /* Real bKash statement parser using column X-coordinates (Out ~360-390, In ~417-445, Charge ~479-495, Balance ~533-560) */
   function parseBkashStructured(structuredRows) {
     if (!Array.isArray(structuredRows) || !structuredRows.length) return null;
     const rows = [];
@@ -173,7 +436,6 @@
     return { rows, skipped: 0, overviewOut, overviewIn, isBkashLayout: true };
   }
 
-  /* Generic line-based row parser (fallback for Bank / Nagad / Rocket / test fixtures) */
   const IN_WORDS = /(cash\s*in|received|receive|deposit|add\s*money|credit|cr\b|salary|incoming|from\s|refund|cash-in|card\s*to\s*bkash|bank\s*to\s*bkash|remittance|cashback|ক্যাশ\s*ইন|জমা)/i;
   const OUT_WORDS = /(cash\s*out|send\s*money|payment|withdraw|debit|dr\b|transfer\s*to|recharge|bill|purchase|cash-out|ক্যাশ\s*আউট|উত্তোলন|পেমেন্ট)/i;
   const MONEY_RE = /-?\d[\d,]*\.\d{1,2}|-?\d{1,3}(?:,\d{3})+|-?\d+/g;
@@ -269,7 +531,6 @@
       if (p) { p.in += r.in; p.out += r.out; p.count++; }
     }
     const list = months.map((k) => per[k]);
-    // Any 1 month: single-direction Cash-in OR Cash-out (NOT added together)
     const best = Math.max(0, ...list.map((p) => Math.max(p.in, p.out)));
     const total3 = list.reduce((s, p) => s + p.in + p.out, 0);
     const activeMonths = list.filter((p) => p.count > 0).length;
@@ -304,7 +565,7 @@
     };
   }
 
-  /* ------------------------------------------------------------ authenticity & bKash font checks */
+  /* ------------------------------------------------------------ authenticity & bKash/Nagad checks */
   function balanceCheck(rows) {
     const withBal = rows.filter((r) => r.balance !== null);
     if (withBal.length < 3) return { checked: 0, broken: 0 };
@@ -346,9 +607,16 @@
   }
 
   function signals(meta, rows, bal, provider, parsedInfo) {
+    const isFull = provider && (provider.id === "bkash" || provider.id === "nagad");
+    if (!isFull) {
+      return [
+        { level: "info", text: "ℹ️ Bank Statement: শুধুমাত্র লেনদেনের টাকা-পয়সা অটো যাচাই করা হয়েছে — নাম ও PDF authenticity ম্যানুয়ালি চেক করুন।" },
+      ];
+    }
+
     const out = [];
     const m = meta || {};
-    const isBkash = provider && provider.id === "bkash";
+    const isBkash = provider.id === "bkash";
     const tool = `${m.producer || ""} ${m.creator || ""}`.trim();
 
     if (tool && EDITORS.test(tool) && !GENUINE_HINT.test(tool)) {
@@ -426,43 +694,53 @@
     return null;
   }
 
-  function evaluateHolder(holder, customerName, guarantorName, guarantorRelation) {
-    if (!holder) return { status: "unknown", text: "Statement থেকে account-holder-এর নাম পাওয়া যায়নি।" };
-    const custMatch = customerName ? nameMatch(customerName, holder) : null;
-    if (custMatch && custMatch.level === "match") {
-      return { status: "ok_customer", match: custMatch, returnTid: null, text: `✅ Customer-এর নামের সাথে নাম মিলেছে — "${holder}"` };
+  function evaluateHolder(holder, customerName, guarantorName, guarantorRelation, provider) {
+    const isFull = !provider || provider.id === "bkash" || provider.id === "nagad";
+    if (!isFull) {
+      return {
+        status: "manual_bank",
+        match: null,
+        returnTid: null,
+        text: holder
+          ? `ℹ️ Bank Statement (নাম: "${holder}"): নাম ও authenticity ম্যানুয়ালি যাচাই করতে হবে।`
+          : "ℹ️ Bank Statement: নাম ও authenticity ম্যানুয়ালি যাচাই করতে হবে।",
+      };
     }
-    const guarMatch = guarantorName ? nameMatch(guarantorName, holder) : null;
-    if (guarMatch && guarMatch.level === "match") {
-      if (FIRST_BLOOD.has(guarantorRelation)) {
+
+    if (!holder) return { status: "unknown", text: "Statement থেকে account-holder-এর নাম পাওয়া যায়নি।" };
+    const custMatch = customerName ? strictNameMatch(customerName, holder) : null;
+    if (custMatch && custMatch.ok) {
+      const extra = custMatch.note ? ` (${custMatch.note})` : "";
+      return { status: "ok_customer", match: custMatch, returnTid: null, text: `✅ Customer-এর নামের সাথে নাম মিলেছে — "${holder}"${extra}` };
+    }
+    const guarMatch = guarantorName ? strictNameMatch(guarantorName, holder) : null;
+    if (guarMatch && guarMatch.ok) {
+      const extra = guarMatch.note ? ` (${guarMatch.note})` : "";
+      if (ALLOWED_GUARANTOR_RELATIONS.has(guarantorRelation)) {
+        const relLabel = guarantorRelation === "spouse" ? "Wife / Spouse" : `${guarantorRelation} — First Blood`;
         return {
           status: "ok_guarantor_fb",
           match: guarMatch,
           returnTid: null,
-          text: `✅ Guarantor (${guarantorRelation} — First Blood)-এর নামের সাথে নাম মিলেছে — "${holder}"`,
+          text: `✅ Guarantor (${relLabel})-এর নামের সাথে নাম মিলেছে — "${holder}"${extra}`,
         };
       }
       return {
         status: "return_non_fb",
         match: guarMatch,
         returnTid: "stm.28",
-        text: `❌ RETURN (stm.28): Statement-টি Guarantor-এর নামে ("${holder}"), কিন্তু সম্পর্ক First Blood (বাবা/মা/ভাই/বোন) নয়।`,
-      };
-    }
-    if ((custMatch && custMatch.level === "partial") || (guarMatch && guarMatch.level === "partial")) {
-      return {
-        status: "partial",
-        match: custMatch && custMatch.level === "partial" ? custMatch : guarMatch,
-        returnTid: null,
-        text: `⚠️ নাম আংশিক মিলেছে ("${holder}") — চোখে যাচাই করুন।`,
+        text: `❌ RETURN (stm.28): Statement-টি Guarantor-এর নামে ("${holder}"), কিন্তু রক্তের সম্পর্ক (বাবা/মা/ছেলে/মেয়ে/ভাই/বোন) বা Wife নয় — গ্রহণযোগ্য নয়।`,
       };
     }
     if (customerName || guarantorName) {
+      const whyCust = custMatch && custMatch.problem ? `Customer তুলনা: ${custMatch.problem}` : "";
+      const whyGuar = guarMatch && guarMatch.problem ? `Guarantor তুলনা: ${guarMatch.problem}` : "";
+      const detail = [whyCust, whyGuar].filter(Boolean).join(" | ");
       return {
         status: "return_other",
         match: custMatch,
         returnTid: "stm.28",
-        text: `❌ RETURN (stm.28): Statement-টি Customer বা First-Blood Guarantor কারো নামের সাথে মেলেনি ("${holder}")।`,
+        text: `❌ RETURN (stm.28): Statement-এর নাম ("${holder}") মেলেনি — ${detail}`,
       };
     }
     return { status: "no_input", text: `Statement-এ নাম: "${holder}" (Customer/Guarantor নাম দিলে মিলিয়ে দেখা হবে)।` };
@@ -472,18 +750,34 @@
   function analyze(input) {
     const lines = input.lines || [];
     const provider = detectProvider(lines);
+    const isFull = provider.id === "bkash" || provider.id === "nagad";
     const parsed = parseRows(lines, input.structuredRows);
     const sop = sopCheck(parsed.rows, input.appDate, input.cfg, lines);
-    const bal = balanceCheck(parsed.rows);
+    const bal = isFull ? balanceCheck(parsed.rows) : { checked: 0, broken: 0 };
     const holder = findHolderName(lines);
-    const holderCheck = evaluateHolder(holder, input.customerName, input.guarantorName, input.guarantorRelation);
+    const holderCheck = evaluateHolder(holder, input.customerName, input.guarantorName, input.guarantorRelation, provider);
     const forbiddenHits = provider.id === "bkash" ? scanBkashKeywords(lines) : [];
+    const relationCheck = input.guarantorRelation
+      ? verifyGuarantorRelation({
+          relation: input.guarantorRelation,
+          customerName: input.customerName,
+          customerFather: input.customerFather,
+          customerMother: input.customerMother,
+          guarantorName: input.guarantorName,
+          guarantorFather: input.guarantorFather,
+          guarantorMother: input.guarantorMother,
+          guarantorHusband: input.guarantorHusband,
+          spouseProof: input.spouseProof,
+        })
+      : null;
 
     return {
       provider,
+      isFullCheck: isFull,
       holder,
-      name: input.customerName && holder ? nameMatch(input.customerName, holder) : null,
+      name: isFull && input.customerName && holder ? strictNameMatch(input.customerName, holder) : null,
       holderCheck,
+      relationCheck,
       forbiddenHits,
       rows: parsed.rows.length,
       skipped: parsed.skipped,
@@ -495,7 +789,12 @@
 
   return {
     CONFIG,
+    FIRST_BLOOD,
+    ALLOWED_GUARANTOR_RELATIONS,
     nameMatch,
+    strictNameMatch,
+    relationNameMatch,
+    verifyGuarantorRelation,
     parseAmount,
     findDate,
     parseLine,

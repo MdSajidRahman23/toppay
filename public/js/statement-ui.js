@@ -16,7 +16,7 @@
   function reset() {
     if (!$("stOut")) return;
     $("stOut").innerHTML = "";
-    ["stCust", "stGuar", "stRel", "stApp", "stCph", "stGph", "stFile"].forEach((i) => { if ($(i)) $(i).value = ""; });
+    ["stCust", "stGuar", "stRel", "stApp", "stCph", "stGph", "stCustFather", "stCustMother", "stGuarFather", "stGuarMother", "stGuarHusband", "stSpouseProof", "stFile"].forEach((i) => { if ($(i)) $(i).value = ""; });
     status("");
   }
 
@@ -26,8 +26,8 @@
     const card = el("div", "card");
     card.appendChild(el("h3", "", `ফলাফল (${a.provider.id.toUpperCase()})`));
 
-    if (!a.provider.verified) {
-      card.appendChild(el("p", "warn", "⚠️ " + a.provider.id.toUpperCase() + " স্টেটমেন্টের ক্ষেত্রে শুধু নাম ও টাকার হিসাব যাচাই করা হয়েছে — PDF চোখে মিলিয়ে নিন।"));
+    if (!a.isFullCheck) {
+      card.appendChild(el("p", "warn", "ℹ️ Bank Statement: শুধুমাত্র লেনদেনের টাকা-পয়সা অটো যাচাই করা হয়েছে — অ্যাকাউন্ট হোল্ডারের নাম ও PDF authenticity চোখে মিলিয়ে নিন।"));
     }
 
     if (a.forbiddenHits && a.forbiddenHits.length > 0) {
@@ -36,6 +36,9 @@
     }
 
     card.appendChild(el("p", a.holderCheck.returnTid ? "sig high" : "", a.holderCheck.text));
+    if (a.relationCheck && a.relationCheck.text) {
+      card.appendChild(el("p", a.relationCheck.ok === false ? "sig high" : "", a.relationCheck.text));
+    }
 
     card.appendChild(el("p", "", `লেনদেন পাওয়া গেছে: ${a.rows}টি (পড়তে না পারা: ${a.skipped}টি)। শেষ ${a.sop.excluded} দিন বাদ (${a.sop.cutoff}-এর পরের লেনদেন ধরা হয়নি)।`));
 
@@ -53,7 +56,7 @@
     card.appendChild(el("p", "", `📌 MRP < ৳৫০,০০০ হলে (যেকোনো ১ মাসে এককভাবে Cash-in বা Cash-out ≥ ৳২,০০০): সেরা মাস ৳${fmt(a.sop.best)} — ${a.sop.passMin ? "✅ পাস (মাঝের মাসে লেনদেন না থাকলেও চলবে)" : "❌ পাস হয়নি"}${a.sop.passFast ? " · ⚡ ৬,০০০+ (Fast-track)" : ""}`));
     card.appendChild(el("p", "", `📌 MRP ≥ ৳৫০,০০০ হলে (৩ মাসের মোট Cash-in + Cash-out ≥ ৳১৫,০০০): ৩ মাসের মোট ৳${fmt(a.sop.total3)} — ${a.sop.passHighMrp15k ? "✅ ১৫,০০০+ পাস" : "❌ ১৫,০০০ হয়নি"}${a.sop.passHighMrpExempt30k ? " · ⭐ ৩০,০০০+ (Job ID/License ছাড়)" : ""} · স্টেটমেন্ট কভার: ${a.sop.covered}/৩ মাস`));
 
-    card.appendChild(el("h4", "", "Authenticity ও ফন্ট যাচাই (bKash)"));
+    card.appendChild(el("h4", "", a.isFullCheck ? "Authenticity ও ফন্ট যাচাই (bKash / Nagad)" : "Bank Statement নোট"));
     const ul = el("ul");
     a.signals.forEach((s) => ul.appendChild(el("li", "sig " + s.level, (s.level === "warn" ? "⚠️ " : s.level === "ok" ? "✔ " : "ℹ️ ") + s.text)));
     card.appendChild(ul);
@@ -77,6 +80,8 @@
       app.setFields(fields);
       if (a.holderCheck.returnTid) {
         app.addManual(a.holderCheck.returnTid, "return");
+      } else if (a.relationCheck && a.relationCheck.returnTid) {
+        app.addManual(a.relationCheck.returnTid, "return");
       }
       app.showCheck();
     });
@@ -115,6 +120,12 @@
         customerName: $("stCust").value.trim(),
         guarantorName: $("stGuar") ? $("stGuar").value.trim() : "",
         guarantorRelation: $("stRel") ? $("stRel").value : "",
+        customerFather: $("stCustFather") ? $("stCustFather").value.trim() : "",
+        customerMother: $("stCustMother") ? $("stCustMother").value.trim() : "",
+        guarantorFather: $("stGuarFather") ? $("stGuarFather").value.trim() : "",
+        guarantorMother: $("stGuarMother") ? $("stGuarMother").value.trim() : "",
+        guarantorHusband: $("stGuarHusband") ? $("stGuarHusband").value.trim() : "",
+        spouseProof: $("stSpouseProof") ? $("stSpouseProof").value : "",
         appDate: app0,
         cfg,
       });

@@ -15,7 +15,7 @@ KEY = "toppay:policy"
 CACHE_TTL = 15
 LOG_MAX = 30
 
-RELATIONS = {"father": "বাবা", "mother": "মা", "brother": "ভাই", "sister": "বোন", "spouse": "স্বামী/স্ত্রী",
+RELATIONS = {"father": "বাবা", "mother": "মা", "son": "ছেলে", "daughter": "মেয়ে", "brother": "ভাই", "sister": "বোন", "spouse": "স্বামী/স্ত্রী",
              "other_relative": "অন্য আত্মীয়", "friend": "বন্ধু", "colleague": "সহকর্মী"}
 NOT_SERVED_LABELS = {
     "media_press": "Media / press", "ngo_loan": "Loan-দানকারী NGO কর্মী", "competitor": "Competitor / অন্য installment কর্মী",
@@ -55,7 +55,7 @@ SPEC = [
     {"key": "weekend_days", "group": "অফিস সময় (Salary slip)", "label": "সাপ্তাহিক ছুটি", "type": "multi", "default": [4, 5], "choices": {str(k): v for k, v in DAYS.items()}},
     # --- Who is allowed
     {"key": "first_blood", "group": "সম্পর্ক ও সেবার বাইরের পেশা", "label": "Name mismatch হলেও চলবে এমন সম্পর্ক (first blood)", "type": "multi",
-     "default": ["father", "mother", "brother", "sister"], "choices": RELATIONS, "help": "Spouse আলাদা নিয়মে (প্রমাণসহ) চলে।"},
+     "default": ["father", "mother", "son", "daughter", "brother", "sister"], "choices": RELATIONS, "help": "Spouse আলাদা নিয়মে (প্রমাণসহ) চলে।"},
     {"key": "not_served", "group": "সম্পর্ক ও সেবার বাইরের পেশা", "label": "Reject হবে এমন পেশা (NOT SERVED)", "type": "multi",
      "default": list(NOT_SERVED_LABELS), "choices": NOT_SERVED_LABELS},
 ]

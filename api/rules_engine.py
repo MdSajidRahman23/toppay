@@ -62,7 +62,7 @@ NOT_SERVED = {
     "disabled": "Person with disability (blind, deaf, physical or intellectual)",
 }
 
-FIRST_BLOOD = {"father", "mother", "brother", "sister"}
+FIRST_BLOOD = {"father", "mother", "son", "daughter", "brother", "sister"}
 
 STATUS_APPROVED = "APPROVED"
 STATUS_ACTION = "ACTION REQUIRED"
