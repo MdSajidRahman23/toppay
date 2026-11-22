@@ -34,8 +34,8 @@ SPEC = [
      "help": "Internal: সীমার এত কাছে থাকলে গ্রহণ করা হয়, BP-কে বলা হয় না।"},
     # --- Statement / money
     {"key": "statement_months", "group": "Statement ও লেনদেন", "label": "কত মাসের statement লাগবে", "type": "int", "default": 3, "min": 1, "max": 12, "unit": "মাস"},
-    {"key": "min_month_tx", "group": "Statement ও লেনদেন", "label": "ন্যূনতম লেনদেন (যেকোনো ১ মাসে cash-in বা cash-out)", "type": "int", "default": 2000, "min": 0, "max": 10000000, "unit": "৳",
-     "help": "Cash-in ও cash-out আলাদা ধরা হয়, যোগ করা হয় না।"},
+    {"key": "min_month_tx", "group": "Statement ও লেনদেন", "label": "ন্যূনতম লেনদেন (যেকোনো ১ মাসে Debit + Credit মিলিয়ে)", "type": "int", "default": 2000, "min": 0, "max": 10000000, "unit": "৳",
+     "help": "যেকোনো ১ মাসে Cash-in + Cash-out (Debit + Credit) যোগ করে দেখা হয়।"},
     {"key": "fast_track_tx", "group": "Statement ও লেনদেন", "label": "Fast-track লেনদেন (১ মাসে)", "type": "int", "default": 6000, "min": 0, "max": 10000000, "unit": "৳"},
     {"key": "money_tolerance", "group": "Statement ও লেনদেন", "label": "টাকার tolerance (এত কম থাকলেও গ্রহণযোগ্য)", "type": "int", "default": 60, "min": 0, "max": 1000, "unit": "৳",
      "help": "২,০০০ − ৬০ = ১,৯৪০ হলেও পাস। MRP-তে এই tolerance নেই।"},

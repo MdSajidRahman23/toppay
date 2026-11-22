@@ -36,6 +36,9 @@
     }
 
     card.appendChild(el("p", a.holderCheck.returnTid ? "sig high" : "", a.holderCheck.text));
+    if (a.holderCheck.status === "ok_customer") {
+      card.appendChild(el("p", "sig ok", "📞 Customer Statement মিলেছে — Guarantor-কে শুধু Missed Call দিলেই হবে।"));
+    }
     if (a.relationCheck && a.relationCheck.text) {
       card.appendChild(el("p", a.relationCheck.ok === false ? "sig high" : "", a.relationCheck.text));
     }
@@ -53,7 +56,7 @@
     });
     card.appendChild(tb);
 
-    card.appendChild(el("p", "", `📌 MRP < ৳৫০,০০০ হলে (যেকোনো ১ মাসে এককভাবে Cash-in বা Cash-out ≥ ৳২,০০০): সেরা মাস ৳${fmt(a.sop.best)} — ${a.sop.passMin ? "✅ পাস (মাঝের মাসে লেনদেন না থাকলেও চলবে)" : "❌ পাস হয়নি"}${a.sop.passFast ? " · ⚡ ৬,০০০+ (Fast-track)" : ""}`));
+    card.appendChild(el("p", "", `📌 MRP < ৳৫০,০০০ হলে (যেকোনো ১ মাসে Debit + Credit (Cash-in + Cash-out) মিলিয়ে ≥ ৳২,০০০): সেরা মাস ৳${fmt(a.sop.best)} — ${a.sop.passMin ? "✅ পাস (মাঝের মাসে লেনদেন না থাকলেও চলবে)" : "❌ পাস হয়নি"}${a.sop.passFast ? " · ⚡ ৬,০০০+ (Fast-track)" : ""}`));
     card.appendChild(el("p", "", `📌 MRP ≥ ৳৫০,০০০ হলে (৩ মাসের মোট Cash-in + Cash-out ≥ ৳১৫,০০০): ৩ মাসের মোট ৳${fmt(a.sop.total3)} — ${a.sop.passHighMrp15k ? "✅ ১৫,০০০+ পাস" : "❌ ১৫,০০০ হয়নি"}${a.sop.passHighMrpExempt30k ? " · ⭐ ৩০,০০০+ (Job ID/License ছাড়)" : ""} · স্টেটমেন্ট কভার: ${a.sop.covered}/৩ মাস`));
 
     card.appendChild(el("h4", "", a.isFullCheck ? "Authenticity ও ফন্ট যাচাই (bKash / Nagad)" : "Bank Statement নোট"));

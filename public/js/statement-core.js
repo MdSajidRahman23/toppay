@@ -396,15 +396,37 @@
     { id: "rocket", re: /rocket|dutch[\s-]*bangla/i, verified: false, fullCheck: false },
     { id: "bank", re: /\bbank\b|islami|brac|city\s*bank|eastern|prime|mutual\s*trust|sonali|janata|agrani|rupali|pubali|uttara|ific|ncc|one\s*bank|standard\s*chartered|hsbc|ab\s*bank|southeast|mercantile|jamuna|shahjalal|exim|social\s*islami|al[\s-]*arafah|first\s*security|premier\s*bank|dhaka\s*bank|midland|modhumoti|nrb|sbac|padma|shimanto|citizens|bengal\s*commercial|community\s*bank|global\s*islami|union\s*bank|meghna/i, verified: false, fullCheck: false },
   ];
+  const BANK_HEADER_RE = /(?:islami\s*bank|bank\s*bangladesh|bank\s*plc|bank\s*ltd|bank\s*limited|agent\s*banking|account\s*statement|statement\s*of\s*account|brac\s*bank|city\s*bank|dutch[\s-]*bangla\s*bank|eastern\s*bank|prime\s*bank|mutual\s*trust|sonali\s*bank|janata\s*bank|agrani\s*bank|rupali\s*bank|pubali\s*bank|uttara\s*bank|ific\s*bank|ncc\s*bank|one\s*bank|standard\s*chartered|hsbc|ab\s*bank|southeast\s*bank|mercantile\s*bank|jamuna\s*bank|shahjalal|exim\s*bank|social\s*islami|al[\s-]*arafah|first\s*security|premier\s*bank|dhaka\s*bank|midland\s*bank|modhumoti\s*bank|nrb\s*bank|sbac\s*bank|padma\s*bank|shimanto\s*bank|citizens\s*bank|bengal\s*commercial|community\s*bank|global\s*islami|union\s*bank|meghna\s*bank)/i;
+
   function detectProvider(lines) {
+    const topHead = lines.slice(0, 18).join(" ");
     const head = lines.slice(0, 40).join(" ");
     const tail = lines.slice(-20).join(" ");
     const combined = head + " " + tail;
-    if (/nagad|নগদ|ডাক বিভাগের ডিজিটাল লেনদেন|nagad\.com\.bd/i.test(combined)
-        || (/Statement Generation Date/i.test(head) && /Last KYC Status/i.test(head))) {
+
+    // 1. Explicit Nagad Statement header/footer (check before generic "Statement of Account" since Nagad uses "Statement of Account")
+    if (/ডাক বিভাগের ডিজিটাল লেনদেন|nagad\.com\.bd|Nagad\s*(?:Statement|Account|Wallet|Customer)/i.test(combined)
+        || (/Statement Generation Date/i.test(head) && /Last KYC Status/i.test(head))
+        || (/\bnagad\b|নগদ/i.test(topHead) && !/transfer\s*to|send\s*money\s*to|wallet/i.test(topHead))) {
       return PROVIDERS.find((p) => p.id === "nagad");
     }
-    return PROVIDERS.find((p) => p.re.test(combined)) || { id: "bank", verified: false, fullCheck: false };
+
+    // 2. Explicit bKash Statement header/footer
+    if (/bKash\s*Statement|bKash\s*Account|Customer\s*Wallet|16247|bkash\.com/i.test(combined)) {
+      return PROVIDERS.find((p) => p.id === "bkash");
+    }
+
+    // 3. Explicit Bank Statement header or Withdraw/Deposit table columns
+    const hasBankTableCols = (/\bWithdraw\b/i.test(head) && /\bDeposit\b/i.test(head))
+      || (/\bDebit\b/i.test(head) && /\bCredit\b/i.test(head) && /\bBalance\b/i.test(head) && !/bkash|nagad/i.test(topHead));
+    if (BANK_HEADER_RE.test(topHead) || hasBankTableCols) {
+      return PROVIDERS.find((p) => p.id === "bank");
+    }
+
+    if (/rocket|dutch[\s-]*bangla/i.test(topHead)) {
+      return PROVIDERS.find((p) => p.id === "rocket");
+    }
+    return { id: "bank", verified: false, fullCheck: false };
   }
 
   const BKASH_FORBIDDEN = [
@@ -498,7 +520,140 @@
     return { date: f.date, amounts, text: line };
   }
 
-  function parseRows(lines, structuredRows) {
+  const BANK_SKIP_ROW_RE = /(?:b\s*\/\s*f\s*balance|brought\s*forward|opening\s*balance|closing\s*balance|total\s*withdraw|total\s*deposit|total\s*debit|total\s*credit)/i;
+
+  function parseBankStructured(structuredRows) {
+    if (!Array.isArray(structuredRows) || !structuredRows.length) return null;
+    let drX = null, crX = null, balX = null;
+    for (const r of structuredRows) {
+      const txt = r.text || "";
+      const hasDr = /\b(?:Withdraw|Debit|Dr)\b/i.test(txt);
+      const hasCr = /\b(?:Deposit|Credit|Cr)\b/i.test(txt);
+      const hasBal = /\bBalance\b/i.test(txt);
+      if (hasDr && hasCr && hasBal) {
+        const pDr = r.parts.find((p) => /\b(?:Withdraw|Debit|Dr)\b/i.test(p.s));
+        const pCr = r.parts.find((p) => /\b(?:Deposit|Credit|Cr)\b/i.test(p.s));
+        const pBal = r.parts.find((p) => /\bBalance\b/i.test(p.s));
+        if (pDr && pCr && pBal) {
+          drX = pDr.x;
+          crX = pCr.x;
+          balX = pBal.x;
+          break;
+        }
+      }
+    }
+    if (drX === null || crX === null || balX === null) return null;
+
+    const minColX = Math.min(drX, crX) - 35;
+    const rows = [];
+    for (const r of structuredRows) {
+      const txt = r.text || "";
+      if (BANK_SKIP_ROW_RE.test(txt)) continue;
+      const f = findDate(txt);
+      if (!f) continue;
+
+      let drAmt = 0, crAmt = 0, balance = null;
+      for (const p of r.parts) {
+        if (p.x < minColX) continue;
+        const val = parseAmount(p.s.trim());
+        if (val === null) continue;
+        const dDr = Math.abs(p.x - drX);
+        const dCr = Math.abs(p.x - crX);
+        const dBal = Math.abs(p.x - balX);
+        const best = Math.min(dDr, dCr, dBal);
+        if (best === dBal) balance = val;
+        else if (best === dDr) drAmt = Math.abs(val);
+        else if (best === dCr) crAmt = Math.abs(val);
+      }
+      if (drAmt === 0 && crAmt === 0) continue;
+      rows.push({
+        date: f.date,
+        in: crAmt,
+        out: drAmt,
+        charge: 0,
+        balance,
+        dir: crAmt > 0 ? "in" : "out",
+      });
+    }
+    return rows.length ? { rows, skipped: [], overviewOut: null, overviewIn: null, isBkashLayout: false } : null;
+  }
+
+  function parseBankRows(lines, structuredRows) {
+    const sb = parseBankStructured(structuredRows);
+    if (sb) return sb;
+
+    const rows = [], skipped = [];
+    let prevBal = null;
+    for (const line of lines) {
+      const f = findDate(line);
+      if (!f) continue;
+      const cleaned = f.rest
+        .replace(/\b[A-Za-z0-9]{10,}\b/g, " ")
+        .replace(/\b\d{7,}\b/g, " ")
+        .replace(/\b(?:88)?0?1\d{9,10}\b/g, " ");
+      const a = lineAmounts(cleaned);
+      if (!a.length) continue;
+
+      if (BANK_SKIP_ROW_RE.test(line)) {
+        prevBal = a[a.length - 1];
+        continue;
+      }
+
+      let crAmt = 0, drAmt = 0, balance = null;
+      if (a.length >= 3) {
+        const c1 = Math.abs(a[a.length - 3]);
+        const c2 = Math.abs(a[a.length - 2]);
+        balance = a[a.length - 1];
+        if (prevBal !== null) {
+          if (Math.abs((prevBal - c1 + c2) - balance) < 0.05) {
+            drAmt = c1;
+            crAmt = c2;
+          } else if (Math.abs((prevBal + c1 - c2) - balance) < 0.05) {
+            crAmt = c1;
+            drAmt = c2;
+          }
+        }
+        if (crAmt === 0 && drAmt === 0) {
+          if (c1 === 0 && c2 > 0) crAmt = c2;
+          else if (c2 === 0 && c1 > 0) drAmt = c1;
+        }
+      } else if (a.length === 2) {
+        const amt = Math.abs(a[0]);
+        balance = a[1];
+        if (/\bcr\b|credit|deposit/i.test(line) && !/\bdr\b|debit|withdraw/i.test(line)) crAmt = amt;
+        else if (/\bdr\b|debit|withdraw/i.test(line) && !/\bcr\b|credit|deposit/i.test(line)) drAmt = amt;
+        else if (prevBal !== null) {
+          if (balance > prevBal + 0.01) crAmt = amt;
+          else if (balance < prevBal - 0.01) drAmt = amt;
+        }
+      } else if (a.length === 1) {
+        const amt = Math.abs(a[0]);
+        if (/\bcr\b|credit|deposit/i.test(line)) crAmt = amt;
+        else if (/\bdr\b|debit|withdraw/i.test(line)) drAmt = amt;
+      }
+
+      if (balance !== null) prevBal = balance;
+      if (crAmt === 0 && drAmt === 0) {
+        skipped.push(line);
+        continue;
+      }
+      rows.push({
+        date: f.date,
+        in: crAmt,
+        out: drAmt,
+        charge: 0,
+        balance,
+        dir: crAmt > 0 ? "in" : "out",
+      });
+    }
+    return { rows, skipped, overviewOut: null, overviewIn: null, isBkashLayout: false };
+  }
+
+  function parseRows(lines, structuredRows, provider) {
+    if (provider && !provider.fullCheck) {
+      return parseBankRows(lines, structuredRows);
+    }
+
     const bk = parseBkashStructured(structuredRows);
     if (bk) return bk;
 
@@ -558,7 +713,7 @@
     const head = lines.slice(0, 35);
     for (let i = 0; i < head.length; i++) {
       const s = toAscii(head[i]) + (i + 1 < head.length ? " " + toAscii(head[i + 1]) : "");
-      const m = /Statement\s*Period\s*[:\-]?\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[\s-][A-Za-z]{3}[\s-]\d{2,4})\s*(?:to|TO|-)\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[\s-][A-Za-z]{3}[\s-]\d{2,4})/i.exec(s);
+      const m = /(?:Statement\s*Period|Statement\s*From\s*(?:Date)?)\s*[:\-]?\s*(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4}|\d{1,2}[\s-][A-Za-z]{3}[\s-]\d{2,4})\s*(?:to|TO|-)\s*(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4}|\d{1,2}[\s-][A-Za-z]{3}[\s-]\d{2,4})/i.exec(s);
       if (m) {
         const d1 = findDate(m[1]), d2 = findDate(m[2]);
         if (d1 && d2) return { start: d1.date, end: d2.date };
@@ -578,7 +733,7 @@
       if (p) { p.in += r.in; p.out += r.out; p.count++; }
     }
     const list = months.map((k) => per[k]);
-    const best = Math.max(0, ...list.map((p) => Math.max(p.in, p.out)));
+    const best = Math.max(0, ...list.map((p) => p.in + p.out));
     const total3 = list.reduce((s, p) => s + p.in + p.out, 0);
     const activeMonths = list.filter((p) => p.count > 0).length;
 
@@ -636,6 +791,26 @@
     return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0))) : null;
   }
 
+  function checkNagadFonts(meta) {
+    const names = Array.isArray(meta && meta.fontNames) ? meta.fontNames : [];
+    if (!names.length) return { checked: false, ok: true, warn: null };
+    const clean = names
+      .map((n) => String(n).replace(/^\//, "").trim())
+      .filter((n) => n && !/^g_d\d+_f\d+$/i.test(n));
+    if (!clean.length) return { checked: false, ok: true, warn: null };
+    const hasHelv = clean.some((n) => /^([A-Z]{6}\+)?Helvetica$/i.test(n));
+    const hasHelvBold = clean.some((n) => /^([A-Z]{6}\+)?Helvetica-Bold$/i.test(n));
+    const foreign = clean.filter((n) => !/^(([A-Z]{6}\+)?Helvetica(-Bold|-BoldOblique|-Oblique)?)$/i.test(n));
+    if (foreign.length > 0 || !hasHelv || !hasHelvBold) {
+      return {
+        checked: true,
+        ok: false,
+        warn: `⚠️ Nagad ফন্ট অমিল (Edited/Fake সন্দেহ): পাওয়া গেছে [${clean.join(", ")}] — আসল Nagad PDF-এ শুধুমাত্র Helvetica, Helvetica-Bold ও Helvetica-BoldOblique থাকে।`,
+      };
+    }
+    return { checked: true, ok: true, warn: null };
+  }
+
   function checkBkashFonts(meta) {
     const names = Array.isArray(meta && meta.fontNames) ? meta.fontNames : [];
     if (!names.length) return { checked: false, ok: true, warn: null };
@@ -682,6 +857,14 @@
       out.push({ level: "info", text: `PDF generator: "${tool}"` });
     } else {
       out.push({ level: "info", text: "PDF-এ producer তথ্য নেই।" });
+    }
+
+    if (provider.id === "nagad") {
+      const nfc = checkNagadFonts(m);
+      if (nfc.checked) {
+        if (!nfc.ok) out.push({ level: "warn", text: nfc.warn });
+        else out.push({ level: "ok", text: "Nagad অরিজিনাল ফন্ট যাচাইকৃত (Helvetica, Helvetica-Bold, Helvetica-BoldOblique)।" });
+      }
     }
 
     if (isBkash && parsedInfo && parsedInfo.isBkashLayout) {
@@ -748,7 +931,7 @@
           if (/^[A-Za-z.\s]{3,60}$/.test(cand)) return cand;
         }
       }
-      if (/^Statement Generation Date\b/i.test(l) || /^Statement of Account\b/i.test(l)) {
+      if (/^Statement Generation Date\b/i.test(l) || /^Statement of Account\b/i.test(l) || /^Statement Period\b/i.test(l)) {
         for (let j = Math.max(0, i - 2); j <= Math.min(i + 2, top.length - 1); j++) {
           const cand = toAscii(top[j]).split(/\s{2,}/)[0].trim();
           if (!cand || /^(Statement|Account|Registration|Last KYC|DHAKA|BANANI|GULSHAN|MIRPUR|UTTARA|ROAD|HOUSE|AVENUE|DELTA|Page|Sl\.)/i.test(cand)) continue;
@@ -828,7 +1011,7 @@
     const lines = input.lines || [];
     const provider = detectProvider(lines);
     const isFull = provider.id === "bkash" || provider.id === "nagad";
-    const parsed = parseRows(lines, input.structuredRows);
+    const parsed = parseRows(lines, input.structuredRows, provider);
     const sop = sopCheck(parsed.rows, input.appDate, input.cfg, lines);
     const bal = isFull ? balanceCheck(parsed.rows) : { checked: 0, broken: 0 };
     const holder = findHolderName(lines);

@@ -198,7 +198,7 @@ def find_missing(d: dict) -> list[tuple[str, str]]:
         q.append(("guarantor_profession", "Customer beker - guarantor-er peshha ki? (peshha thakte hobe)"))
     is_high_mrp = mrp is not None and mrp >= C()["high_mrp"]
     if best is None and not is_high_mrp:
-        q.append(("tx_1_month", "Shobcheye bhalo 1 mash-er bKash/bank transaction koto? (cash-in ba cash-out - jeta boro, jog kore na)"))
+        q.append(("tx_1_month", "Shobcheye bhalo 1 mash-er bKash/Nagad/bank transaction koto? (Debit + Credit / cash-in + cash-out miliye)"))
     if d.get("name_mismatch") is True and d.get("guarantor_relation") is None:
         q.append(("guarantor_relation", "Name mismatch ache - guarantor customer-er ke hoy? (father/mother/brother/sister/spouse/onno)"))
     if d.get("guarantor_relation") == "spouse" and d.get("name_mismatch") is True and d.get("spouse_proof") is None:
@@ -303,16 +303,18 @@ def evaluate_application(data: dict) -> dict:
     if best is not None:
         if not is_high_mrp:
             if _ge(best, C()["min_month_tx"]):
-                ok.append(f"At least one month has a cash-in or cash-out of BDT {C()['min_month_tx']:,} or more (best month {best:,.0f}).")
+                ok.append(f"At least one month has combined Debit + Credit (cash-in + cash-out) of BDT {C()['min_month_tx']:,} or more (best month {best:,.0f}).")
             else:
                 R(_r("return", "tx_month",
-                     f"No month reaches BDT {C()['min_month_tx']:,} in cash-in or in cash-out (best month {best:,.0f}); "
+                     f"No month reaches BDT {C()['min_month_tx']:,} in combined cash-in + cash-out (best month {best:,.0f}); "
                      f"the last {C()['exclude_last_days']} days before the application are not counted. Ask for another statement.",
                      TID["tx_month"]))
         if _ge(best, C()["fast_track_tx"]):
             fast_track = True
+    if d.get("name_mismatch") is False and (best is not None or _num(d.get("tx_3_month")) is not None):
+        notes.insert(0, "Customer Statement verified: Guarantor-কে শুধু Missed Call দিলেই হবে (missed call to guarantor is enough).")
     notes.append(f"Statement must cover the last {C()['statement_months']} months; the last {C()['exclude_last_days']} days before application "
-                 f"are not counted. Cash-in and cash-out are NOT added together for the {C()['min_month_tx']:,} rule.")
+                 f"are not counted. Cash-in + Cash-out (Debit + Credit) combined is counted for the {C()['min_month_tx']:,} / {C()['fast_track_tx']:,} / 15k / 30k rules.")
 
     # ---- 1d. Relationship check during the call (nervous slips get one chance; no prompting)
     rc = d["relation_check"]
@@ -395,6 +397,8 @@ def evaluate_application(data: dict) -> dict:
         elif rel is not None:
             R(_r("return", "g_not_family", "Name mismatch: guarantor must be a first-blood relative or a spouse with proof. Change the guarantor.",
                  TID["g_not_family"]))
+    elif d["guarantor_relation"] == "spouse" and d["spouse_proof"] == "none":
+        R(_r("return", "spouse_proof", "Wife-এর NID-তে স্বামীর নাম না থাকলে Marriage Certificate অথবা সন্তানের NID / Birth Certificate দিতে হবে।", TID["spouse_proof"]))
 
     # ---- 4. HIGH-MRP RULES
     if mrp is not None:

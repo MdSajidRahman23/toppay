@@ -8,7 +8,7 @@
   <title>TopPay Smart Decision Assistant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=5.2" />
+  <link rel="stylesheet" href="style.css?v=5.5" />
 </head>
 <body>
   <!-- ================= LOGIN ================= -->
@@ -98,9 +98,9 @@
           <label>Down payment %
             <input type="number" name="down_payment_pct" min="0" max="100" inputmode="numeric" />
           </label>
-          <label>সবচেয়ে ভালো ১ মাসের Cash-in <u>অথবা</u> Cash-out
+          <label>সবচেয়ে ভালো ১ মাসের লেনদেন (Cash-in + Cash-out মিলিয়ে)
             <input type="number" name="tx_1_month" min="0" inputmode="numeric" />
-            <small>যেটা বেশি সেটা (দুটো যোগ করবেন না)। গত ৩ মাসের যেকোনো ১ মাসে ২,০০০+ লাগবে। আবেদনের আগের শেষ ৭ দিন বাদে।</small>
+            <small>Debit + Credit (Cash-in + Cash-out) যোগ করে। গত ৩ মাসের যেকোনো ১ মাসে ২,০০০+ লাগবে (৬,০০০+ হলে Fast-Track)। আবেদনের আগের শেষ ৭ দিন বাদে।</small>
           </label>
           <label>৩ মাসের মোট (Cash-in + Cash-out যোগ করে)
             <input type="number" name="tx_3_month" min="0" inputmode="numeric" />
@@ -488,9 +488,9 @@
   </div><!-- /#app -->
 
   <script src="vendor/pdfjs/pdf.min.js"></script>
-  <script src="js/statement-core.js?v=5.2"></script>
-  <script src="js/statement-pdf.js?v=5.2"></script>
-  <script src="js/statement-ui.js?v=5.2"></script>
-  <script src="app.js?v=5.2"></script>
+  <script src="js/statement-core.js?v=5.5"></script>
+  <script src="js/statement-pdf.js?v=5.5"></script>
+  <script src="js/statement-ui.js?v=5.5"></script>
+  <script src="app.js?v=5.5"></script>
 </body>
 </html>
