@@ -32,7 +32,7 @@
 
     if (a.forbiddenHits && a.forbiddenHits.length > 0) {
       const labels = a.forbiddenHits.map((x) => x.label).join(", ");
-      card.appendChild(el("p", "sig high", `🚨 RETURN (bKash নিষিদ্ধ লেনদেন/শব্দ পাওয়া গেছে): ${labels} — আবেদন RETURN হবে।`));
+      card.appendChild(el("p", "warn", `⚠️ লোন অ্যাপ লেনদেন পাওয়া গেছে (ACTION REQUIRED — অ্যাপের স্ক্রিনশট চাইতে হবে): ${labels}`));
     }
 
     card.appendChild(el("p", a.holderCheck.returnTid ? "sig high" : "", a.holderCheck.text));
@@ -69,15 +69,15 @@
         tx_3_month: Math.round(a.sop.total3),
         stmt_months_covered: a.sop.covered,
       };
-      if (a.holderCheck.status === "ok_guarantor_fb") {
-        fields.name_mismatch = true;
+      fields.name_mismatch = a.holderCheck.status === "ok_guarantor_fb";
+      if (fields.name_mismatch) {
         const rel = $("stRel") ? $("stRel").value : "";
         if (rel) fields.guarantor_relation = rel;
       }
-      if (a.forbiddenHits && a.forbiddenHits.length > 0) {
-        fields.palmpay_overdue = true;
-      }
       app.setFields(fields);
+      if (a.forbiddenHits && a.forbiddenHits.length > 0) {
+        a.forbiddenHits.forEach((hit) => app.addManual(hit.tid || "adr.11", "action"));
+      }
       if (a.holderCheck.returnTid) {
         app.addManual(a.holderCheck.returnTid, "return");
       } else if (a.relationCheck && a.relationCheck.returnTid) {

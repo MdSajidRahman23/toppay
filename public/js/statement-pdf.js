@@ -11,9 +11,18 @@
 
   function itemsToRows(items, tol) {
     const rows = [];
+    let lastValidY = null;
+    let seqX = 1000;
     items.forEach((it) => {
       if (!it.str || !it.str.trim()) return;
-      const y = it.transform[5], x = it.transform[4];
+      let y = it.transform[5], x = it.transform[4];
+      if (x === 0 && y === 0 && lastValidY !== null) {
+        y = lastValidY;
+        x = ++seqX;
+      } else {
+        lastValidY = y;
+        seqX = Math.max(1000, x + 100);
+      }
       let row = rows.find((r) => Math.abs(r.y - y) <= tol);
       if (!row) { row = { y, parts: [] }; rows.push(row); }
       row.parts.push({ x, s: it.str, fontName: it.fontName || "" });
@@ -52,6 +61,20 @@
     throw err;
   }
 
+  function extractRawBaseFonts(bytes) {
+    const found = new Set();
+    try {
+      const latin = new TextDecoder("latin1").decode(bytes);
+      const re = /\/BaseFont\s*\/([A-Za-z0-9_+.-]+)/g;
+      let m;
+      while ((m = re.exec(latin))) {
+        const fn = m[1].trim();
+        if (fn && !/^g_d\d+_f\d+$/i.test(fn)) found.add(fn);
+      }
+    } catch { /* optional */ }
+    return found;
+  }
+
   async function extract(buffer, passwords) {
     const lib = setup();
     const bytes = new Uint8Array(buffer);
@@ -60,7 +83,7 @@
     const structuredRows = [];
     let images = 0, chars = 0;
     const fontIds = new Set();
-    const realFonts = new Set();
+    const realFonts = extractRawBaseFonts(bytes);
 
     for (let p = 1; p <= doc.numPages; p++) {
       const page = await doc.getPage(p);
@@ -79,7 +102,8 @@
           fontIds.add(it.fontName);
           try {
             const fo = page.commonObjs.get(it.fontName);
-            if (fo && fo.name) realFonts.add(String(fo.name));
+            const rawName = fo && (fo.loadedName || fo.name);
+            if (rawName && !/^g_d\d+_f\d+$/i.test(String(rawName))) realFonts.add(String(rawName));
           } catch { /* font obj not resolved */ }
         }
       });

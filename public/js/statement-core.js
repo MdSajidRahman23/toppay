@@ -168,6 +168,7 @@
   function verifyGuarantorRelation(opts) {
     const o = opts || {};
     const rel = String(o.relation || "").toLowerCase().trim();
+    const stmtMismatch = Boolean(o.statementNameMismatch);
     const custName = String(o.customerName || "").trim();
     const custFather = String(o.customerFather || "").trim();
     const custMother = String(o.customerMother || "").trim();
@@ -182,11 +183,20 @@
     }
 
     if (!ALLOWED_GUARANTOR_RELATIONS.has(rel)) {
+      if (stmtMismatch) {
+        return {
+          status: "not_allowed",
+          ok: false,
+          returnTid: "stm.28",
+          text: "❌ গ্রহণযোগ্য নয় (RETURN): Statement-এ Name Mismatch থাকলে রক্তের সম্পর্ক (Father, Mother, Son, Daughter, Brother, Sister) অথবা প্রমাণসহ Wife ছাড়া অন্য কারো Statement চলবে না।",
+        };
+      }
+      const relLabels = { other_relative: "অন্য আত্মীয় / Cousin", friend: "বন্ধু (Friend)", colleague: "সহকর্মী (Colleague)" };
       return {
-        status: "not_allowed",
-        ok: false,
-        returnTid: "stm.28",
-        text: "❌ গ্রহণযোগ্য নয় (RETURN): রক্তের সম্পর্ক (Father, Mother, Son, Daughter, Brother, Sister) এবং Wife বাদে অন্য কারো Statement গ্রহণযোগ্য নয়।",
+        status: "ok_guarantor_only",
+        ok: true,
+        returnTid: null,
+        text: `✅ Guarantor হিসেবে "${relLabels[rel] || rel}" গ্রহণযোগ্য। (শুধুমাত্র Statement অন্য কারো নামে হলে First Blood / প্রমাণসহ Wife লাগবে; Customer-এর নিজের Statement হলে কোনো সমস্যা নেই।)`,
       };
     }
 
@@ -248,6 +258,18 @@
     }
 
     if (rel === "spouse") {
+      const custHusband = String(o.customerHusband || "").trim();
+      if (custHusband && guarName) {
+        const mch = relationNameMatch(custHusband, guarName);
+        if (mch.ok) {
+          return {
+            status: "match",
+            ok: true,
+            returnTid: null,
+            text: `✅ Spouse সম্পর্ক মিলেছে: Customer-এর NID-তে স্বামীর নাম ("${custHusband}") Guarantor-এর নামের ("${guarName}") সাথে মিলেছে।`,
+          };
+        }
+      }
       if (guarHusband) {
         if (!custName) {
           return {
@@ -375,21 +397,27 @@
     { id: "bank", re: /\bbank\b|islami|brac|city\s*bank|eastern|prime|mutual\s*trust|sonali|janata|agrani|rupali|pubali|uttara|ific|ncc|one\s*bank|standard\s*chartered|hsbc|ab\s*bank|southeast|mercantile|jamuna|shahjalal|exim|social\s*islami|al[\s-]*arafah|first\s*security|premier\s*bank|dhaka\s*bank|midland|modhumoti|nrb|sbac|padma|shimanto|citizens|bengal\s*commercial|community\s*bank|global\s*islami|union\s*bank|meghna/i, verified: false, fullCheck: false },
   ];
   function detectProvider(lines) {
-    const head = lines.slice(0, 35).join(" ");
-    return PROVIDERS.find((p) => p.re.test(head)) || { id: "bank", verified: false, fullCheck: false };
+    const head = lines.slice(0, 40).join(" ");
+    const tail = lines.slice(-20).join(" ");
+    const combined = head + " " + tail;
+    if (/nagad|নগদ|ডাক বিভাগের ডিজিটাল লেনদেন|nagad\.com\.bd/i.test(combined)
+        || (/Statement Generation Date/i.test(head) && /Last KYC Status/i.test(head))) {
+      return PROVIDERS.find((p) => p.id === "nagad");
+    }
+    return PROVIDERS.find((p) => p.re.test(combined)) || { id: "bank", verified: false, fullCheck: false };
   }
 
   const BKASH_FORBIDDEN = [
-    { key: "palmpay", label: "PalmPay / Palm", re: /\bpalm\s*pay\b|\bpalmpay\b/i },
-    { key: "shohoz", label: "Shohoz", re: /\bshohoz\b/i },
-    { key: "ambala", label: "Ambala", re: /\bambala\b/i },
-    { key: "momo", label: "Momo", re: /\bmomo\b/i },
+    { key: "palmpay", label: "PalmPay / Palm", tid: "adr.11", re: /\bpalm\s*pay\b|\bpalmpay\b/i },
+    { key: "shohoz", label: "Shohoz / SahajMobile", tid: "adr.18", re: /\bshohoz\b|\bsahaj\s*mobile\b|\bsahaj\b/i },
+    { key: "ambala", label: "Ambala", tid: "adr.22", re: /\bambala\b/i },
+    { key: "momo", label: "Momo", tid: "adr.12", re: /\bmomo\b/i },
   ];
   function scanBkashKeywords(lines) {
     const hits = [];
     const full = lines.join("\n");
     for (const kw of BKASH_FORBIDDEN) {
-      if (kw.re.test(full)) hits.push({ key: kw.key, label: kw.label });
+      if (kw.re.test(full)) hits.push({ key: kw.key, label: kw.label, tid: kw.tid });
     }
     return hits;
   }
@@ -398,29 +426,43 @@
     if (!Array.isArray(structuredRows) || !structuredRows.length) return null;
     const rows = [];
     let overviewOut = null, overviewIn = null;
+    let colMinX = 330, outStart = 340, outEnd = 405, inEnd = 465, chgEnd = 515;
 
     for (let i = 0; i < structuredRows.length; i++) {
       const r = structuredRows[i];
       const txt = r.text || "";
+      if (/Cash\s*Out/i.test(txt) && /Cash\s*In/i.test(txt) && /Balance/i.test(txt)) {
+        const pOut = r.parts.find((p) => /Cash\s*Out/i.test(p.s));
+        const pIn = r.parts.find((p) => /Cash\s*In/i.test(p.s));
+        const pChg = r.parts.find((p) => /Charge/i.test(p.s));
+        const pBal = r.parts.find((p) => /Balance/i.test(p.s));
+        if (pOut && pIn && pBal) {
+          outStart = Math.max(250, pOut.x - 18);
+          colMinX = outStart - 10;
+          outEnd = (pOut.x + pIn.x) / 2 + 6;
+          inEnd = pChg ? (pIn.x + pChg.x) / 2 + 6 : (pIn.x + pBal.x) / 2;
+          chgEnd = pChg ? (pChg.x + pBal.x) / 2 + 6 : pBal.x - 12;
+        }
+      }
       const mOut = /^Total Out:\s*([\d,]+\.\d{2})/i.exec(txt);
       if (mOut) overviewOut = parseAmount(mOut[1]);
       const mIn = /^Total In:\s*([\d,]+\.\d{2})/i.exec(txt);
       if (mIn) overviewIn = parseAmount(mIn[1]);
 
-      const dtPart = r.parts.find((p) => p.x < 70 && /^\d{2}-[A-Za-z]{3}-\d{2,4}$/.test(p.s.trim()));
+      const dtPart = r.parts.find((p) => p.x < 75 && /^\d{2}-[A-Za-z]{3}-\d{2,4}$/.test(p.s.trim()));
       if (!dtPart) continue;
       const f = findDate(dtPart.s.trim());
       if (!f) continue;
 
       let outAmt = 0, inAmt = 0, charge = 0, balance = null;
       for (const p of r.parts) {
-        if (p.x < 330) continue;
+        if (p.x < colMinX) continue;
         const val = parseAmount(p.s.trim());
         if (val === null) continue;
-        if (p.x >= 340 && p.x < 405) outAmt = Math.abs(val);
-        else if (p.x >= 405 && p.x < 465) inAmt = Math.abs(val);
-        else if (p.x >= 465 && p.x < 515) charge = val;
-        else if (p.x >= 515) balance = val;
+        if (p.x >= outStart && p.x < outEnd) outAmt = Math.abs(val);
+        else if (p.x >= outEnd && p.x < inEnd) inAmt = Math.abs(val);
+        else if (p.x >= inEnd && p.x < chgEnd) charge = val;
+        else if (p.x >= chgEnd) balance = val;
       }
       if (outAmt === 0 && inAmt === 0) continue;
       rows.push({
@@ -436,8 +478,8 @@
     return { rows, skipped: 0, overviewOut, overviewIn, isBkashLayout: true };
   }
 
-  const IN_WORDS = /(cash\s*in|received|receive|deposit|add\s*money|credit|cr\b|salary|incoming|from\s|refund|cash-in|card\s*to\s*bkash|bank\s*to\s*bkash|remittance|cashback|ক্যাশ\s*ইন|জমা)/i;
-  const OUT_WORDS = /(cash\s*out|send\s*money|payment|withdraw|debit|dr\b|transfer\s*to|recharge|bill|purchase|cash-out|ক্যাশ\s*আউট|উত্তোলন|পেমেন্ট)/i;
+  const IN_WORDS = /(cash\s*in|received|receive|deposit|add\s*money|credit|cr\b|salary|incoming|from\s|refund|cash-in|card\s*to\s*bkash|bank\s*to\s*bkash|remittance|cashback|reward\s*disbursement|ক্যাশ\s*ইন|জমা)/i;
+  const OUT_WORDS = /(cash\s*out|send\s*money|payment|withdraw|debit|dr\b|transfer\s*to|recharge|top\s*up|bill|purchase|cash-out|ক্যাশ\s*আউট|উত্তোলন|পেমেন্ট)/i;
   const MONEY_RE = /-?\d[\d,]*\.\d{1,2}|-?\d{1,3}(?:,\d{3})+|-?\d+/g;
 
   function lineAmounts(rest) {
@@ -446,7 +488,11 @@
   function parseLine(line) {
     const f = findDate(line);
     if (!f) return null;
-    const rest = f.rest.replace(/TRX\s*ID:\s*[A-Z0-9]+/gi, " ").replace(/\b[A-Za-z0-9]{8,}\b/g, " ").replace(/\b(?:88)?0?1\d{9,10}\b/g, " ");
+    const rest = f.rest
+      .replace(/TRX\s*ID:\s*[A-Z0-9]+/gi, " ")
+      .replace(/\b[A-Za-z0-9]{8,}\b/g, " ")
+      .replace(/\b\d{7,}\b/g, " ")
+      .replace(/\b(?:88)?0?1\d{9,10}\b/g, " ");
     const amounts = lineAmounts(rest);
     if (!amounts.length) return null;
     return { date: f.date, amounts, text: line };
@@ -509,9 +555,10 @@
   }
 
   function findStatementPeriod(lines) {
-    for (const l of lines.slice(0, 35)) {
-      const s = toAscii(l);
-      const m = /Statement\s*Period\s*[:\-]\s*(\d{1,2}[\s-][A-Za-z]{3}[\s-]\d{2,4})\s*(?:to|-)\s*(\d{1,2}[\s-][A-Za-z]{3}[\s-]\d{2,4})/i.exec(s);
+    const head = lines.slice(0, 35);
+    for (let i = 0; i < head.length; i++) {
+      const s = toAscii(head[i]) + (i + 1 < head.length ? " " + toAscii(head[i + 1]) : "");
+      const m = /Statement\s*Period\s*[:\-]?\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[\s-][A-Za-z]{3}[\s-]\d{2,4})\s*(?:to|TO|-)\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[\s-][A-Za-z]{3}[\s-]\d{2,4})/i.exec(s);
       if (m) {
         const d1 = findDate(m[1]), d2 = findDate(m[2]);
         if (d1 && d2) return { start: d1.date, end: d2.date };
@@ -592,15 +639,18 @@
   function checkBkashFonts(meta) {
     const names = Array.isArray(meta && meta.fontNames) ? meta.fontNames : [];
     if (!names.length) return { checked: false, ok: true, warn: null };
-    const clean = names.map((n) => String(n).replace(/^\//, ""));
+    const clean = names
+      .map((n) => String(n).replace(/^\//, "").trim())
+      .filter((n) => n && !/^g_d\d+_f\d+$/i.test(n));
+    if (!clean.length) return { checked: false, ok: true, warn: null };
     const hasRobotoReg = clean.some((n) => /^([A-Z]{6}\+)?Roboto-Regular$/i.test(n));
     const hasRobotoBold = clean.some((n) => /^([A-Z]{6}\+)?Roboto-Bold$/i.test(n));
     const foreign = clean.filter((n) => !/^(([A-Z]{6}\+)?Roboto-(Regular|Bold)|Helvetica)$/i.test(n));
-    if (foreign.length > 0 || !hasRobotoReg || !hasRobotoBold || clean.length > 3) {
+    if (foreign.length > 0 || !hasRobotoReg || !hasRobotoBold) {
       return {
         checked: true,
         ok: false,
-        warn: `⚠️ bKash ফন্ট অমিল (Edited/Fake সন্দেহ): পাওয়া গেছে [${clean.join(", ")}] — আসল bKash PDF-এ শুধুমাত্র Roboto-Regular, Roboto-Bold ও Helvetica থাকে।`,
+        warn: `⚠️ bKash ফন্ট অমিল (Edited/Fake সন্দেহ): পাওয়া গেছে [${clean.join(", ")}] — আসল bKash PDF-এ শুধুমাত্র Roboto-Regular (যেমন XYZQWE+Roboto-Regular), Roboto-Bold ও Helvetica থাকে।`,
       };
     }
     return { checked: true, ok: true, warn: null };
@@ -642,8 +692,12 @@
       }
       if (parsedInfo.overviewIn !== null && rows && rows.length) {
         const sumIn = rows.reduce((s, r) => s + r.in, 0);
+        const sumOut = rows.reduce((s, r) => s + r.out, 0);
         const sumOutWithFee = rows.reduce((s, r) => s + r.out + Math.abs(r.charge || 0), 0);
-        if (Math.abs(sumIn - parsedInfo.overviewIn) > 0.05 || (parsedInfo.overviewOut !== null && Math.abs(sumOutWithFee - parsedInfo.overviewOut) > 0.05)) {
+        const outMatches = parsedInfo.overviewOut === null
+          || Math.abs(sumOutWithFee - parsedInfo.overviewOut) <= 0.05
+          || Math.abs(sumOut - parsedInfo.overviewOut) <= 0.05;
+        if (Math.abs(sumIn - parsedInfo.overviewIn) > 0.05 || !outMatches) {
           out.push({ level: "warn", text: `Overview-এর Total In/Out-এর সাথে লেনদেনের যোগফল মেলেনি — সংখ্যায় edit হয়ে থাকতে পারে।` });
         } else {
           out.push({ level: "ok", text: "Overview Total In / Total Out এবং সব লেনদেনের যোগফল হুবহু মিলেছে।" });
@@ -674,27 +728,42 @@
   }
 
   /* ------------------------------------------------------------ holder name & relation check */
-  const NAME_LABEL = /(account\s*name|customer\s*name|name\s*of\s*account|account\s*holder|holder\s*name|name|নাম)\s*[:\-]\s*(.+)$/i;
+  const NAME_LABEL = /(account\s*name|customer\s*name|name\s*of\s*account|account\s*holder|holder\s*name|name|নাম)\s*[:\-]\s*(.*)$/i;
   function findHolderName(lines) {
-    for (let i = 0; i < Math.min(lines.length, 30); i++) {
-      const l = toAscii(lines[i]).trim();
+    const top = lines.slice(0, 30);
+    for (let i = 0; i < top.length; i++) {
+      const l = toAscii(top[i]).trim();
       const m = NAME_LABEL.exec(l);
       if (m) {
-        const n = m[2].replace(/\s{2,}.*/, "").trim();
-        if (n && n.length >= 3) return n;
+        let n = m[2].replace(/\s{2,}.*/, "").trim();
+        if (!n && i + 1 < top.length) {
+          n = toAscii(top[i + 1]).replace(/\s{2,}.*/, "").trim();
+        }
+        if (n && n.length >= 3 && !/^(Statement|Account|Customer|Active|Status|Date|Period)/i.test(n)) return n;
       }
       if (/^bKash Statement$/i.test(l)) {
-        for (let j = i + 1; j <= Math.min(i + 4, lines.length - 1); j++) {
-          const cand = toAscii(lines[j]).trim();
+        for (let j = i + 1; j <= Math.min(i + 4, top.length - 1); j++) {
+          const cand = toAscii(top[j]).trim();
           if (!cand || /^(User Type|Statement Period|bKash Account|Issue Date|Overview|16247|www\.)/i.test(cand)) continue;
           if (/^[A-Za-z.\s]{3,60}$/.test(cand)) return cand;
         }
       }
+      if (/^Statement Generation Date\b/i.test(l) || /^Statement of Account\b/i.test(l)) {
+        for (let j = Math.max(0, i - 2); j <= Math.min(i + 2, top.length - 1); j++) {
+          const cand = toAscii(top[j]).split(/\s{2,}/)[0].trim();
+          if (!cand || /^(Statement|Account|Registration|Last KYC|DHAKA|BANANI|GULSHAN|MIRPUR|UTTARA|ROAD|HOUSE|AVENUE|DELTA|Page|Sl\.)/i.test(cand)) continue;
+          if (/^[A-Za-z][A-Za-z.\s]{2,55}$/.test(cand) && cand.split(/\s+/).length >= 2) return cand;
+        }
+      }
+    }
+    for (const l of lines.slice(-10)) {
+      const mBk = /bKash Statement\s*-\s*([A-Za-z.\s]{3,60})$/i.exec(toAscii(l).trim());
+      if (mBk) return mBk[1].trim();
     }
     return null;
   }
 
-  function evaluateHolder(holder, customerName, guarantorName, guarantorRelation, provider) {
+  function evaluateHolder(holder, customerName, guarantorName, guarantorRelation, provider, relationCheck) {
     const isFull = !provider || provider.id === "bkash" || provider.id === "nagad";
     if (!isFull) {
       return {
@@ -717,6 +786,14 @@
     if (guarMatch && guarMatch.ok) {
       const extra = guarMatch.note ? ` (${guarMatch.note})` : "";
       if (ALLOWED_GUARANTOR_RELATIONS.has(guarantorRelation)) {
+        if (relationCheck && relationCheck.ok === false && relationCheck.returnTid) {
+          return {
+            status: "return_relation_mismatch",
+            match: guarMatch,
+            returnTid: relationCheck.returnTid,
+            text: `❌ RETURN (${relationCheck.returnTid}): Statement Guarantor-এর নামে ("${holder}")${extra}, কিন্তু সম্পর্ক যাচাইয়ে সমস্যা — ${relationCheck.text}`,
+          };
+        }
         const relLabel = guarantorRelation === "spouse" ? "Wife / Spouse" : `${guarantorRelation} — First Blood`;
         return {
           status: "ok_guarantor_fb",
@@ -755,14 +832,16 @@
     const sop = sopCheck(parsed.rows, input.appDate, input.cfg, lines);
     const bal = isFull ? balanceCheck(parsed.rows) : { checked: 0, broken: 0 };
     const holder = findHolderName(lines);
-    const holderCheck = evaluateHolder(holder, input.customerName, input.guarantorName, input.guarantorRelation, provider);
-    const forbiddenHits = provider.id === "bkash" ? scanBkashKeywords(lines) : [];
+    const custPreliminary = isFull && input.customerName && holder ? strictNameMatch(input.customerName, holder) : null;
+    const stmtNameMismatch = Boolean(isFull && holder && input.customerName && !(custPreliminary && custPreliminary.ok));
     const relationCheck = input.guarantorRelation
       ? verifyGuarantorRelation({
           relation: input.guarantorRelation,
+          statementNameMismatch: stmtNameMismatch,
           customerName: input.customerName,
           customerFather: input.customerFather,
           customerMother: input.customerMother,
+          customerHusband: input.customerHusband,
           guarantorName: input.guarantorName,
           guarantorFather: input.guarantorFather,
           guarantorMother: input.guarantorMother,
@@ -770,6 +849,8 @@
           spouseProof: input.spouseProof,
         })
       : null;
+    const holderCheck = evaluateHolder(holder, input.customerName, input.guarantorName, input.guarantorRelation, provider, relationCheck);
+    const forbiddenHits = isFull ? scanBkashKeywords(lines) : [];
 
     return {
       provider,
