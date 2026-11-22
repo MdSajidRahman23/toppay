@@ -4,10 +4,12 @@ const T = require("../../public/js/statement-core.js");
 test("name matching: titles, order, spelling, Bangla, initials", () => {
   assert.equal(T.nameMatch("MD. FOKRUL HASAN", "Fokrul Hasan").level, "match");
   assert.equal(T.nameMatch("Hasan Fokrul", "MD FOKRUL HASAN").level, "match");
-  assert.equal(T.nameMatch("Mohammad Rahman", "Muhammad Rahaman").level, "match");
+  // Rule (Nov 2026): at most 1 letter may differ in total; 2+ letters = mismatch
+  assert.equal(T.nameMatch("Mohammad Rahman", "Muhammad Rahaman").level, "mismatch");
+  assert.equal(T.nameMatch("Mohammad Rahman", "Mohammad Rahmen").level, "match");
   assert.equal(T.nameMatch("মোঃ করিম", "Karim").level, "match");
   assert.equal(T.nameMatch("Rahim Uddin", "Karim Hossain").level, "mismatch");
-  assert.equal(T.nameMatch("F. Hasan", "Fokrul Hasan").level, "partial"); // initial only = partial, reviewer decides
+  assert.equal(T.nameMatch("F. Hasan", "Fokrul Hasan").level, "mismatch"); // initial only no longer passes
   assert.equal(T.nameMatch("", "X").ok, false);
 });
 
@@ -37,7 +39,7 @@ test("rows, direction from balance, SOP month rule + 7-day exclusion", () => {
   const s = T.sopCheck(rows, "2026-11-15");
   assert.deepEqual(s.months.map((m) => m.month), ["2026-08", "2026-09", "2026-10"]);
   assert.equal(s.months[0].in, 3000);
-  assert.equal(s.best, 3000);            // best single direction, NOT in+out
+  assert.equal(s.best, 4000);            // Nov 2026 rule: Debit + Credit (cash-in + cash-out) of the month are added
   assert.equal(s.total3, 3000 + 1000 + 2500 + 500 + 1950 + 800);
   assert.ok(s.passMin); assert.ok(!s.passFast);
   assert.equal(s.covered, 3);
@@ -66,9 +68,10 @@ test("balance arithmetic detects an altered balance", () => {
 });
 
 test("authenticity signals", () => {
-  const s = T.signals({ producer: "Sejda PDF Editor", creationDate: "D:20261001100000", modDate: "D:20261005100000", revisions: 2 }, [], null);
+  const BK = { id: "bkash", verified: true, fullCheck: true };
+  const s = T.signals({ producer: "Sejda PDF Editor", creationDate: "D:20261001100000", modDate: "D:20261005100000", revisions: 2 }, [], null, BK);
   assert.ok(s.filter((x) => x.level === "warn").length >= 3);
-  const g = T.signals({ producer: "iText bKash", revisions: 1 }, [], null);
+  const g = T.signals({ producer: "iText bKash", revisions: 1 }, [], null, BK);
   assert.equal(g.filter((x) => x.level === "warn").length, 0);
 });
 
@@ -77,5 +80,5 @@ test("analyze end to end + holder name", () => {
   assert.equal(a.holder, "MD. FOKRUL HASAN");
   assert.equal(a.name.level, "match");
   assert.equal(a.provider.id, "bkash");
-  assert.equal(a.provider.verified, false);
+  assert.equal(a.provider.verified, true); // bKash/Nagad = full authenticity check
 });

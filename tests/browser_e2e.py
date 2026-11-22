@@ -75,7 +75,7 @@ def run(p, label, viewport):
     pg.click("#stRun"); pg.wait_for_selector("#stOut .card", timeout=20000)
     out = pg.inner_text("#stOut")
     check(f"{label}: statement name matches", "নাম মিলেছে" in out, out[:300])
-    check(f"{label}: statement best month 3,000", "3,000" in out)
+    check(f"{label}: statement best month 4,000 (cash-in + cash-out added)", "4,000" in out)
     check(f"{label}: balance ok signal", "ঠিকঠাক মিলেছে" in out)
     pg.set_input_files("#stFile", os.path.join(FIX, "tampered_balance.pdf"))
     pg.click("#stRun"); pg.wait_for_timeout(2500)
@@ -88,7 +88,7 @@ def run(p, label, viewport):
     pg.set_input_files("#stFile", os.path.join(FIX, "good.pdf")); pg.click("#stRun"); pg.wait_for_timeout(2500)
     pg.locator("#stOut button.primary").click()
     pg.wait_for_timeout(600)
-    check(f"{label}: numbers pushed to check form", pg.input_value("input[name=tx_1_month]") == "3000", pg.input_value("input[name=tx_1_month]"))
+    check(f"{label}: numbers pushed to check form", pg.input_value("input[name=tx_1_month]") == "4000", pg.input_value("input[name=tx_1_month]"))
 
     # reset really clears
     pg.click("#reset"); pg.wait_for_timeout(400)

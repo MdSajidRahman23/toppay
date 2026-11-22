@@ -72,7 +72,7 @@ STATUS_NEED_INFO = "MORE INFO NEEDED"
 
 # ----------------------------------------------- template ids (texts: templates_data.py + admin edits)
 TID = {
-    "tx_month": "stm.24",        # best month below 2,000 (cash-in OR cash-out) - wording changed Nov 2026 (not the sum)
+    "tx_month": "stm.04",        # best month (Debit + Credit combined) below 2,000 - official wording "মিলিয়ে" (stm.24 = old separate-direction wording, kept in library)
     "tx3_15k": "job.02", "slip_hours": "stm.22", "slip_bad": "stm.23",
     "nid_name_c": "nid.09", "nid_name_g": "nid.10", "office_phone": "con.15", "g_no_prof": "gua.09",
     "nid_orig": "nid.02", "g_not_family": "gua.05", "spouse_proof": "stm.16",

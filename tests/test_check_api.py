@@ -24,7 +24,7 @@ def test_response_shape_is_the_v2_contract(client, user):
 def test_automatic_reason_has_resolved_text_and_rule(client, user):
     out = post(client, user, {"tx_1_month": 1000})
     r = next(x for x in out["reasons"] if x["id"] == "tx_month")
-    assert r["source"] == "auto" and r["kind"] == "return" and r["tid"] == "stm.24" and not r["dismissed"]
+    assert r["source"] == "auto" and r["kind"] == "return" and r["tid"] == "stm.04" and not r["dismissed"]
     assert "{m3}" not in r["text"] and r["template"].count("{m3}") == 1
     assert "যে কোন এক মাসে" in r["text"] and r["why"]
 

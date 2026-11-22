@@ -28,11 +28,13 @@ def test_new_items_from_the_dump_are_marked_for_review():
     assert len(new) >= 15 and all(t["source"] == "dump" for t in new)
 
 
-def test_changed_rule_wording_is_marked_and_not_the_sum():
-    t = BUILTIN["stm.24"]
+def test_min_month_return_uses_combined_wording():
+    # Nov 2026 rule: Debit + Credit are added -> engine uses the official "milie" wording (stm.04), not the old separate one (stm.24)
+    from rules_engine import TID
     nfd = lambda s: unicodedata.normalize("NFD", s)
-    assert t.get("changed") and nfd("আলাদাভাবে") in nfd(t["text"]) and nfd("মিলিয়ে") not in nfd(t["text"].split("।")[0])
-    assert nfd("মিলিয়ে") in nfd(BUILTIN["stm.04"]["text"])        # the official old wording stays as it was
+    assert TID["tx_month"] == "stm.04"
+    assert nfd("মিলিয়ে") in nfd(BUILTIN["stm.04"]["text"])
+    assert nfd("আলাদাভাবে") not in nfd(BUILTIN["stm.04"]["text"])
 
 
 # ---------------------------------------------------------------- placeholders
