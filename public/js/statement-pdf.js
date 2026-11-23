@@ -75,6 +75,23 @@
     return found;
   }
 
+  function resolveFontObjectName(page, fontId) {
+    const pools = [page && page.commonObjs, page && page.objs];
+    for (const pool of pools) {
+      if (!pool || typeof pool.get !== "function") continue;
+      try {
+        const fo = pool.get(fontId);
+        if (!fo) continue;
+        const cands = [fo.name, fo.fallbackName, fo.loadedName];
+        for (const cand of cands) {
+          const s = String(cand || "").replace(/^\//, "").trim();
+          if (s && !/^g_d\d+_f\d+$/i.test(s)) return s;
+        }
+      } catch { /* not resolved yet */ }
+    }
+    return "";
+  }
+
   async function extract(buffer, passwords) {
     const lib = setup();
     const bytes = new Uint8Array(buffer);
@@ -100,11 +117,8 @@
         chars += (it.str || "").length;
         if (it.fontName) {
           fontIds.add(it.fontName);
-          try {
-            const fo = page.commonObjs.get(it.fontName);
-            const rawName = fo && (fo.loadedName || fo.name);
-            if (rawName && !/^g_d\d+_f\d+$/i.test(String(rawName))) realFonts.add(String(rawName));
-          } catch { /* font obj not resolved */ }
+          const resolved = resolveFontObjectName(page, it.fontName);
+          if (resolved) realFonts.add(resolved);
         }
       });
 
@@ -136,6 +150,7 @@
       fontNames: [...realFonts],
       textChars: chars,
       unlockedWith: used || "",
+      isEncrypted: Boolean(used),
     };
     return { lines, structuredRows, meta, pages: doc.numPages };
   }

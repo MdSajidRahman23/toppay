@@ -471,7 +471,7 @@
       const mIn = /^Total In:\s*([\d,]+\.\d{2})/i.exec(txt);
       if (mIn) overviewIn = parseAmount(mIn[1]);
 
-      const dtPart = r.parts.find((p) => p.x < 75 && /^\d{2}-[A-Za-z]{3}-\d{2,4}$/.test(p.s.trim()));
+      const dtPart = r.parts.find((p) => p.x < 75 && /^\d{2}-[A-Za-z]{3}-\d{2,4}\b/.test(p.s.trim()));
       if (!dtPart) continue;
       const f = findDate(dtPart.s.trim());
       if (!f) continue;
@@ -791,7 +791,7 @@
     return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0))) : null;
   }
 
-  function checkNagadFonts(meta) {
+  function checkNagadFonts(meta, en) {
     const names = Array.isArray(meta && meta.fontNames) ? meta.fontNames : [];
     if (!names.length) return { checked: false, ok: true, warn: null };
     const clean = names
@@ -805,13 +805,15 @@
       return {
         checked: true,
         ok: false,
-        warn: `⚠️ Nagad ফন্ট অমিল (Edited/Fake সন্দেহ): পাওয়া গেছে [${clean.join(", ")}] — আসল Nagad PDF-এ শুধুমাত্র Helvetica, Helvetica-Bold ও Helvetica-BoldOblique থাকে।`,
+        warn: en
+          ? `⚠️ Nagad Font Mismatch (Suspected Edited/Fake): Found [${clean.join(", ")}] — genuine Nagad PDFs only use Helvetica, Helvetica-Bold, and Helvetica-BoldOblique.`
+          : `⚠️ Nagad ফন্ট অমিল (Edited/Fake সন্দেহ): পাওয়া গেছে [${clean.join(", ")}] — আসল Nagad PDF-এ শুধুমাত্র Helvetica, Helvetica-Bold ও Helvetica-BoldOblique থাকে।`,
       };
     }
     return { checked: true, ok: true, warn: null };
   }
 
-  function checkBkashFonts(meta) {
+  function checkBkashFonts(meta, en) {
     const names = Array.isArray(meta && meta.fontNames) ? meta.fontNames : [];
     if (!names.length) return { checked: false, ok: true, warn: null };
     const clean = names
@@ -825,17 +827,25 @@
       return {
         checked: true,
         ok: false,
-        warn: `⚠️ bKash ফন্ট অমিল (Edited/Fake সন্দেহ): পাওয়া গেছে [${clean.join(", ")}] — আসল bKash PDF-এ শুধুমাত্র Roboto-Regular (যেমন XYZQWE+Roboto-Regular), Roboto-Bold ও Helvetica থাকে।`,
+        warn: en
+          ? `⚠️ bKash Font Mismatch (Suspected Edited/Fake): Found [${clean.join(", ")}] — genuine bKash PDFs only use Roboto-Regular (e.g. XYZQWE+Roboto-Regular), Roboto-Bold, and Helvetica.`
+          : `⚠️ bKash ফন্ট অমিল (Edited/Fake সন্দেহ): পাওয়া গেছে [${clean.join(", ")}] — আসল bKash PDF-এ শুধুমাত্র Roboto-Regular (যেমন XYZQWE+Roboto-Regular), Roboto-Bold ও Helvetica থাকে।`,
       };
     }
     return { checked: true, ok: true, warn: null };
   }
 
-  function signals(meta, rows, bal, provider, parsedInfo) {
+  function signals(meta, rows, bal, provider, parsedInfo, lang) {
+    const en = lang === "en";
     const isFull = provider && (provider.id === "bkash" || provider.id === "nagad");
     if (!isFull) {
       return [
-        { level: "info", text: "ℹ️ Bank Statement: শুধুমাত্র লেনদেনের টাকা-পয়সা অটো যাচাই করা হয়েছে — নাম ও PDF authenticity ম্যানুয়ালি চেক করুন।" },
+        {
+          level: "info",
+          text: en
+            ? "ℹ️ Bank Statement: Only transaction amounts are auto-checked — manually verify account holder name and PDF authenticity."
+            : "ℹ️ Bank Statement: শুধুমাত্র লেনদেনের টাকা-পয়সা অটো যাচাই করা হয়েছে — নাম ও PDF authenticity ম্যানুয়ালি চেক করুন।",
+        },
       ];
     }
 
@@ -845,33 +855,58 @@
     const tool = `${m.producer || ""} ${m.creator || ""}`.trim();
 
     if (tool && EDITORS.test(tool) && !GENUINE_HINT.test(tool)) {
-      out.push({ level: "warn", text: `PDF বানানো/বদলানো হয়েছে এই tool-এ: "${tool}" — সাধারণ editor/converter, statement system-এর generator নয়।` });
+      out.push({
+        level: "warn",
+        text: en
+          ? `PDF created/modified using "${tool}" — a general editor/converter, not a statement generator.`
+          : `PDF বানানো/বদলানো হয়েছে এই tool-এ: "${tool}" — সাধারণ editor/converter, statement system-এর generator নয়।`,
+      });
     } else if (isBkash && parsedInfo && parsedInfo.isBkashLayout) {
       const prodOk = /OpenPDF/i.test(m.producer || "") && /bKash/i.test(m.creator || "");
       if (!prodOk) {
-        out.push({ level: "warn", text: `bKash PDF-এর Producer/Creator আসল সিস্টেমের সাথে মেলেনি ("${tool || "empty"}") — আসল bKash-এ "OpenPDF / bKash Limited" থাকে।` });
+        out.push({
+          level: "warn",
+          text: en
+            ? `bKash PDF Producer/Creator mismatch ("${tool || "empty"}") — genuine bKash PDFs use "OpenPDF / bKash Limited".`
+            : `bKash PDF-এর Producer/Creator আসল সিস্টেমের সাথে মেলেনি ("${tool || "empty"}") — আসল bKash-এ "OpenPDF / bKash Limited" থাকে।`,
+        });
       } else {
-        out.push({ level: "ok", text: `bKash অরিজিনাল Generator মিলেছে (${m.producer} / ${m.creator})।` });
+        out.push({
+          level: "ok",
+          text: en
+            ? `Genuine bKash Generator matched (${m.producer} / ${m.creator}).`
+            : `bKash অরিজিনাল Generator মিলেছে (${m.producer} / ${m.creator})।`,
+        });
       }
     } else if (tool) {
       out.push({ level: "info", text: `PDF generator: "${tool}"` });
     } else {
-      out.push({ level: "info", text: "PDF-এ producer তথ্য নেই।" });
+      out.push({ level: "info", text: en ? "No PDF producer metadata found." : "PDF-এ producer তথ্য নেই।" });
     }
 
     if (provider.id === "nagad") {
-      const nfc = checkNagadFonts(m);
+      const nfc = checkNagadFonts(m, en);
       if (nfc.checked) {
         if (!nfc.ok) out.push({ level: "warn", text: nfc.warn });
-        else out.push({ level: "ok", text: "Nagad অরিজিনাল ফন্ট যাচাইকৃত (Helvetica, Helvetica-Bold, Helvetica-BoldOblique)।" });
+        else out.push({
+          level: "ok",
+          text: en
+            ? "Genuine Nagad fonts verified (Helvetica, Helvetica-Bold, Helvetica-BoldOblique)."
+            : "Nagad অরিজিনাল ফন্ট যাচাইকৃত (Helvetica, Helvetica-Bold, Helvetica-BoldOblique)।",
+        });
       }
     }
 
     if (isBkash && parsedInfo && parsedInfo.isBkashLayout) {
-      const fc = checkBkashFonts(m);
+      const fc = checkBkashFonts(m, en);
       if (fc.checked) {
         if (!fc.ok) out.push({ level: "warn", text: fc.warn });
-        else out.push({ level: "ok", text: "bKash অরিজিনাল ফন্ট যাচাইকৃত (Roboto-Regular, Roboto-Bold, Helvetica)।" });
+        else out.push({
+          level: "ok",
+          text: en
+            ? "Genuine bKash fonts verified (Roboto-Regular, Roboto-Bold, Helvetica)."
+            : "bKash অরিজিনাল ফন্ট যাচাইকৃত (Roboto-Regular, Roboto-Bold, Helvetica)।",
+        });
       }
       if (parsedInfo.overviewIn !== null && rows && rows.length) {
         const sumIn = rows.reduce((s, r) => s + r.in, 0);
@@ -881,31 +916,71 @@
           || Math.abs(sumOutWithFee - parsedInfo.overviewOut) <= 0.05
           || Math.abs(sumOut - parsedInfo.overviewOut) <= 0.05;
         if (Math.abs(sumIn - parsedInfo.overviewIn) > 0.05 || !outMatches) {
-          out.push({ level: "warn", text: `Overview-এর Total In/Out-এর সাথে লেনদেনের যোগফল মেলেনি — সংখ্যায় edit হয়ে থাকতে পারে।` });
+          out.push({
+            level: "warn",
+            text: en
+              ? "Overview Total In/Out does not match the sum of transaction rows — figures may have been edited."
+              : "Overview-এর Total In/Out-এর সাথে লেনদেনের যোগফল মেলেনি — সংখ্যায় edit হয়ে থাকতে পারে।",
+          });
         } else {
-          out.push({ level: "ok", text: "Overview Total In / Total Out এবং সব লেনদেনের যোগফল হুবহু মিলেছে।" });
+          out.push({
+            level: "ok",
+            text: en
+              ? "Overview Total In / Total Out matches all transaction rows accurately."
+              : "Overview Total In / Total Out এবং সব লেনদেনের যোগফল হুবহু মিলেছে।",
+          });
         }
       }
     }
 
     const c = pdfDate(m.creationDate), d = pdfDate(m.modDate);
     if (c && d && Math.abs(d - c) > 120000) {
-      out.push({ level: "warn", text: "PDF তৈরির পর পরে আবার বদলানো (modified) হয়েছে — metadata-র তারিখ আলাদা।" });
+      out.push({
+        level: "warn",
+        text: en
+          ? "PDF was modified after creation — CreationDate and ModDate differ."
+          : "PDF তৈরির পর পরে আবার বদলানো (modified) হয়েছে — metadata-র তারিখ আলাদা।",
+      });
     }
     if (m.revisions > 1) {
-      out.push({ level: "warn", text: `PDF-এ ${m.revisions}টি save-revision আছে — তৈরির পর edit হয়ে থাকতে পারে।` });
+      out.push({
+        level: "warn",
+        text: en
+          ? `PDF has ${m.revisions} save revisions — may have been edited after generation.`
+          : `PDF-এ ${m.revisions}টি save-revision আছে — তৈরির পর edit হয়ে থাকতে পারে।`,
+      });
     }
     if (bal && bal.checked >= 3) {
       if (bal.broken > 0) {
-        out.push({ level: "warn", text: `Balance হিসাব মেলেনি ${bal.broken}/${bal.checked} জায়গায় (আগের balance ± amount + fee ≠ নতুন balance)। Edit হয়ে থাকতে পারে।` });
+        out.push({
+          level: "warn",
+          text: en
+            ? `Running balance mismatch in ${bal.broken}/${bal.checked} rows (prev balance ± amount + fee ≠ new balance).`
+            : `Balance হিসাব মেলেনি ${bal.broken}/${bal.checked} জায়গায় (আগের balance ± amount + fee ≠ নতুন balance)। Edit হয়ে থাকতে পারে।`,
+        });
       } else {
-        out.push({ level: "ok", text: `Balance হিসাব ${bal.checked}টি row-তে ঠিকঠাক মিলেছে।` });
+        out.push({
+          level: "ok",
+          text: en
+            ? `Running balance verified across ${bal.checked} rows.`
+            : `Balance হিসাব ${bal.checked}টি row-তে ঠিকঠাক মিলেছে।`,
+        });
       }
     } else if (rows && rows.length) {
-      out.push({ level: "info", text: "Running balance ৩টির কম হওয়ায় ধারাবাহিক balance যাচাই করা যায়নি।" });
+      out.push({
+        level: "info",
+        text: en
+          ? "Fewer than 3 running balance rows available for sequential balance verification."
+          : "Running balance ৩টির কম হওয়ায় ধারাবাহিক balance যাচাই করা যায়নি।",
+      });
     }
     if (m.textChars !== undefined && m.textChars < 40) {
-      out.push({ level: "warn", text: "PDF-এ প্রায় কোনো লেখা নেই — scan/ছবি হতে পারে।" });
+      out.push({
+        level: "warn",
+        text: en
+          ? "Almost no selectable text in PDF — may be a scanned image."
+          : "PDF-এ প্রায় কোনো লেখা নেই — scan/ছবি হতে পারে।",
+      });
     }
     return out;
   }
@@ -946,7 +1021,8 @@
     return null;
   }
 
-  function evaluateHolder(holder, customerName, guarantorName, guarantorRelation, provider, relationCheck) {
+  function evaluateHolder(holder, customerName, guarantorName, guarantorRelation, provider, relationCheck, lang) {
+    const en = lang === "en";
     const isFull = !provider || provider.id === "bkash" || provider.id === "nagad";
     if (!isFull) {
       return {
@@ -954,16 +1030,34 @@
         match: null,
         returnTid: null,
         text: holder
-          ? `ℹ️ Bank Statement (নাম: "${holder}"): নাম ও authenticity ম্যানুয়ালি যাচাই করতে হবে।`
-          : "ℹ️ Bank Statement: নাম ও authenticity ম্যানুয়ালি যাচাই করতে হবে।",
+          ? (en
+              ? `ℹ️ Bank Statement (Name: "${holder}"): Verify holder name and PDF authenticity manually.`
+              : `ℹ️ Bank Statement (নাম: "${holder}"): নাম ও authenticity ম্যানুয়ালি যাচাই করতে হবে।`)
+          : (en
+              ? "ℹ️ Bank Statement: Verify holder name and PDF authenticity manually."
+              : "ℹ️ Bank Statement: নাম ও authenticity ম্যানুয়ালি যাচাই করতে হবে।"),
       };
     }
 
-    if (!holder) return { status: "unknown", text: "Statement থেকে account-holder-এর নাম পাওয়া যায়নি।" };
+    if (!holder) {
+      return {
+        status: "unknown",
+        text: en
+          ? "Account holder name could not be extracted from statement."
+          : "Statement থেকে account-holder-এর নাম পাওয়া যায়নি।",
+      };
+    }
     const custMatch = customerName ? strictNameMatch(customerName, holder) : null;
     if (custMatch && custMatch.ok) {
       const extra = custMatch.note ? ` (${custMatch.note})` : "";
-      return { status: "ok_customer", match: custMatch, returnTid: null, text: `✅ Customer-এর নামের সাথে নাম মিলেছে — "${holder}"${extra}` };
+      return {
+        status: "ok_customer",
+        match: custMatch,
+        returnTid: null,
+        text: en
+          ? `✅ Matched with Customer name — "${holder}"${extra}`
+          : `✅ Customer-এর নামের সাথে নাম মিলেছে — "${holder}"${extra}`,
+      };
     }
     const guarMatch = guarantorName ? strictNameMatch(guarantorName, holder) : null;
     if (guarMatch && guarMatch.ok) {
@@ -974,7 +1068,9 @@
             status: "return_relation_mismatch",
             match: guarMatch,
             returnTid: relationCheck.returnTid,
-            text: `❌ RETURN (${relationCheck.returnTid}): Statement Guarantor-এর নামে ("${holder}")${extra}, কিন্তু সম্পর্ক যাচাইয়ে সমস্যা — ${relationCheck.text}`,
+            text: en
+              ? `❌ RETURN (${relationCheck.returnTid}): Statement is in Guarantor's name ("${holder}")${extra}, but relationship verification failed — ${relationCheck.text}`
+              : `❌ RETURN (${relationCheck.returnTid}): Statement Guarantor-এর নামে ("${holder}")${extra}, কিন্তু সম্পর্ক যাচাইয়ে সমস্যা — ${relationCheck.text}`,
           };
         }
         const relLabel = guarantorRelation === "spouse" ? "Wife / Spouse" : `${guarantorRelation} — First Blood`;
@@ -982,32 +1078,44 @@
           status: "ok_guarantor_fb",
           match: guarMatch,
           returnTid: null,
-          text: `✅ Guarantor (${relLabel})-এর নামের সাথে নাম মিলেছে — "${holder}"${extra}`,
+          text: en
+            ? `✅ Matched with Guarantor (${relLabel}) name — "${holder}"${extra}`
+            : `✅ Guarantor (${relLabel})-এর নামের সাথে নাম মিলেছে — "${holder}"${extra}`,
         };
       }
       return {
         status: "return_non_fb",
         match: guarMatch,
         returnTid: "stm.28",
-        text: `❌ RETURN (stm.28): Statement-টি Guarantor-এর নামে ("${holder}"), কিন্তু রক্তের সম্পর্ক (বাবা/মা/ছেলে/মেয়ে/ভাই/বোন) বা Wife নয় — গ্রহণযোগ্য নয়।`,
+        text: en
+          ? `❌ RETURN (stm.28): Statement is in Guarantor's name ("${holder}"), which is not First Blood (Father/Mother/Son/Daughter/Brother/Sister) or Wife.`
+          : `❌ RETURN (stm.28): Statement-টি Guarantor-এর নামে ("${holder}"), কিন্তু রক্তের সম্পর্ক (বাবা/মা/ছেলে/মেয়ে/ভাই/বোন) বা Wife নয় — গ্রহণযোগ্য নয়।`,
       };
     }
     if (customerName || guarantorName) {
-      const whyCust = custMatch && custMatch.problem ? `Customer তুলনা: ${custMatch.problem}` : "";
-      const whyGuar = guarMatch && guarMatch.problem ? `Guarantor তুলনা: ${guarMatch.problem}` : "";
+      const whyCust = custMatch && custMatch.problem ? (en ? `Customer check: ${custMatch.problem}` : `Customer তুলনা: ${custMatch.problem}`) : "";
+      const whyGuar = guarMatch && guarMatch.problem ? (en ? `Guarantor check: ${guarMatch.problem}` : `Guarantor তুলনা: ${guarMatch.problem}`) : "";
       const detail = [whyCust, whyGuar].filter(Boolean).join(" | ");
       return {
         status: "return_other",
         match: custMatch,
         returnTid: "stm.28",
-        text: `❌ RETURN (stm.28): Statement-এর নাম ("${holder}") মেলেনি — ${detail}`,
+        text: en
+          ? `❌ RETURN (stm.28): Statement name ("${holder}") did not match — ${detail}`
+          : `❌ RETURN (stm.28): Statement-এর নাম ("${holder}") মেলেনি — ${detail}`,
       };
     }
-    return { status: "no_input", text: `Statement-এ নাম: "${holder}" (Customer/Guarantor নাম দিলে মিলিয়ে দেখা হবে)।` };
+    return {
+      status: "no_input",
+      text: en
+        ? `Statement name: "${holder}" (Enter Customer/Guarantor name to compare).`
+        : `Statement-এ নাম: "${holder}" (Customer/Guarantor নাম দিলে মিলিয়ে দেখা হবে)।`,
+    };
   }
 
   /* ------------------------------------------------------------ whole analysis */
   function analyze(input) {
+    const lang = input.lang || "bn";
     const lines = input.lines || [];
     const provider = detectProvider(lines);
     const isFull = provider.id === "bkash" || provider.id === "nagad";
@@ -1032,7 +1140,7 @@
           spouseProof: input.spouseProof,
         })
       : null;
-    const holderCheck = evaluateHolder(holder, input.customerName, input.guarantorName, input.guarantorRelation, provider, relationCheck);
+    const holderCheck = evaluateHolder(holder, input.customerName, input.guarantorName, input.guarantorRelation, provider, relationCheck, lang);
     const forbiddenHits = isFull ? scanBkashKeywords(lines) : [];
 
     return {
@@ -1047,7 +1155,7 @@
       skipped: parsed.skipped,
       sop,
       balance: bal,
-      signals: signals(input.meta, parsed.rows, bal, provider, parsed),
+      signals: signals(input.meta, parsed.rows, bal, provider, parsed, lang),
     };
   }
 
