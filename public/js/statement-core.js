@@ -1006,10 +1006,17 @@
           if (/^[A-Za-z.\s]{3,60}$/.test(cand)) return cand;
         }
       }
-      if (/^Statement Generation Date\b/i.test(l) || /^Statement of Account\b/i.test(l) || /^Statement Period\b/i.test(l)) {
-        for (let j = Math.max(0, i - 2); j <= Math.min(i + 2, top.length - 1); j++) {
+      const mNagadInline = /^([A-Za-z][A-Za-z.\s]{2,55}?)\s+Statement Generation Date\b/i.exec(l);
+      if (mNagadInline) {
+        const cand = mNagadInline[1].trim();
+        if (cand && !/\b(Statement|Account|Registration|Last KYC|DHAKA|BANANI|GULSHAN|MIRPUR|UTTARA|ROAD|HOUSE|AVENUE|DELTA|Page|Sl)\b/i.test(cand)) {
+          return cand;
+        }
+      }
+      if (/^Statement Generation Date\b/i.test(l) || /^Statement Period\b/i.test(l)) {
+        for (let j = Math.max(0, i - 1); j <= Math.min(i + 1, top.length - 1); j++) {
           const cand = toAscii(top[j]).split(/\s{2,}/)[0].trim();
-          if (!cand || /^(Statement|Account|Registration|Last KYC|DHAKA|BANANI|GULSHAN|MIRPUR|UTTARA|ROAD|HOUSE|AVENUE|DELTA|Page|Sl\.)/i.test(cand)) continue;
+          if (!cand || /\b(Statement|Account|Registration|Last KYC|DHAKA|BANANI|GULSHAN|MIRPUR|UTTARA|ROAD|HOUSE|AVENUE|DELTA|Page|Sl)\b/i.test(cand)) continue;
           if (/^[A-Za-z][A-Za-z.\s]{2,55}$/.test(cand) && cand.split(/\s+/).length >= 2) return cand;
         }
       }

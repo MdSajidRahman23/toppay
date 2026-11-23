@@ -65,7 +65,7 @@
     const found = new Set();
     try {
       const latin = new TextDecoder("latin1").decode(bytes);
-      const re = /\/BaseFont\s*\/([A-Za-z0-9_+.-]+)/g;
+      const re = /\/(?:BaseFont|FontName)\s*\/([A-Za-z0-9_+.-]+)/g;
       let m;
       while ((m = re.exec(latin))) {
         const fn = m[1].trim();
