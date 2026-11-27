@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="bn"><head><meta charset="utf-8"><title>TopPay Extension Upgrade</title>
+<style>
+ body{font:15px system-ui,sans-serif;max-width:640px;margin:30px auto;padding:0 16px;color:#111}
+ h2{margin:0 0 4px} .muted{color:#666;font-size:13px}
+ .box{border:1px solid #ddd;border-radius:10px;padding:14px;margin:14px 0}
+ button{padding:9px 14px;margin:4px 6px 4px 0;border:0;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer;font-size:14px}
+ button.sec{background:#e5e7eb;color:#111} button.warn{background:#dc2626} button:disabled{opacity:.45;cursor:default}
+ pre{background:#0f172a;color:#e2e8f0;padding:10px;border-radius:8px;white-space:pre-wrap;max-height:260px;overflow:auto;font-size:12px}
+ .ok{color:#16a34a;font-weight:600} .bad{color:#dc2626;font-weight:600}
+</style></head>
+<body>
+<h2>⬆ TopPay Extension Upgrade</h2>
+<div class="muted">GitHub/Vercel এ নতুন version push হলে এখান থেকে এক ক্লিকে আপডেট হবে।</div>
+<div class="box">
+  <div>বর্তমান version: <b id="localV">…</b> &nbsp;|&nbsp; সার্ভারে: <b id="remoteV">…</b></div>
+  <div id="status" class="muted" style="margin-top:6px">চেক করা হচ্ছে…</div>
+</div>
+<div>
+  <button id="btnCheck" class="sec">🔄 আবার চেক করুন</button>
+  <button id="btnUpgrade" disabled>⬆ Upgrade now</button>
+  <button id="btnRollback" class="sec">↩ আগের version-এ ফিরুন</button>
+  <button id="btnReset" class="sec">📁 Folder নতুন করে বাছুন</button>
+</div>
+<div class="muted">প্রথমবার Upgrade চাপলে Chrome আপনার <b>extension folder</b> (যেটা Load unpacked করেছেন) বাছতে বলবে — একবারই। এরপর শুধু বাটন।</div>
+<pre id="log"></pre>
+<script src="upgrade.js"></script>
+</body></html>

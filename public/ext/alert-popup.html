@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+ body{width:250px;font:14px sans-serif;padding:12px}
+ label{display:block;margin:10px 0 4px}
+ select,button{width:100%;padding:6px}
+ button{margin-top:8px;cursor:pointer}
+</style></head>
+<body>
+ <label><input type="checkbox" id="enabled"> <b>Alert ON</b></label>
+ <label>Beep time</label>
+ <select id="duration">
+  <option value="10">10 sec</option><option value="20">20 sec</option>
+  <option value="30">30 sec</option><option value="60">1 min</option>
+  <option value="120">2 min</option>
+ </select>
+ <label>Auto refresh (Search click)</label>
+ <select id="refresh">
+  <option value="0">Off</option><option value="10">10 sec</option><option value="20">20 sec</option><option value="30">30 sec</option>
+  <option value="60">1 min</option><option value="120">2 min</option>
+ </select>
+ <button id="test">Test sound (5 sec)</button>
+ <button id="stop">Stop beep</button>
+ <button id="upgrade">⬆ Upgrade extension</button>
+ <script src="alert-popup.js"></script>
+</body></html>

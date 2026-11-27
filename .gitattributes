@@ -1,0 +1,2 @@
+# Extension files must stay byte-for-byte identical (sha256 is checked by the Upgrade button)
+public/ext/** binary

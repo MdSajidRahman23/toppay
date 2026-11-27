@@ -1,0 +1,282 @@
+/* TopPay Smart Decision & Verification Assistant v2.2.0 */
+#tp-verify-floating-btn {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  width: 54px;
+  height: 54px;
+  background: linear-gradient(135deg, #194073 0%, #0f294a 100%);
+  color: #ffffff;
+  cursor: move;
+  z-index: 2147483646;
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+#tp-verify-floating-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+}
+
+#tp-smart-panel {
+  position: fixed;
+  right: 16px;
+  top: 56px;
+  width: 390px;
+  max-height: calc(100vh - 76px);
+  background: #0f192b;
+  color: #f3f4f6;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65);
+  z-index: 2147483647;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #283d59;
+}
+
+#tp-smart-panel * {
+  box-sizing: border-box;
+}
+
+.tp-header {
+  background: #194073;
+  padding: 10px 14px;
+  cursor: move;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #283d59;
+  user-select: none;
+}
+
+.tp-badge-sop {
+  background: #d97706;
+  color: #fff;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.tp-hbtn {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tp-hbtn:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.tp-subbar {
+  background: #132238;
+  padding: 6px 14px;
+  border-bottom: 1px solid #1e3250;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.tp-status-banner {
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #1e3250;
+}
+
+.tp-tabs {
+  display: flex;
+  background: #122138;
+  border-bottom: 1px solid #1e3250;
+}
+
+.tp-tab-btn {
+  flex: 1;
+  padding: 8px 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  border-bottom: 2px solid transparent;
+}
+
+.tp-tab-btn.active {
+  color: #60a5fa;
+  border-bottom-color: #60a5fa;
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.tp-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tp-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tp-body::-webkit-scrollbar-thumb {
+  background: #283d59;
+  border-radius: 3px;
+}
+
+.tp-card {
+  background: #142338;
+  border: 1px solid #233b5c;
+  border-radius: 6px;
+  padding: 9px 10px;
+}
+
+.tp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid #1e3250;
+  font-size: 12px;
+}
+
+.tp-row:last-child {
+  border-bottom: none;
+}
+
+.tp-label {
+  color: #94a3b8;
+}
+
+.tp-val {
+  font-weight: 600;
+  color: #f8fafc;
+  text-align: right;
+  max-width: 220px;
+  word-break: break-word;
+}
+
+.tp-val-err {
+  color: #f87171 !important;
+}
+
+.tp-val-ok {
+  color: #4ade80 !important;
+}
+
+.tp-val-warn {
+  color: #fbbf24 !important;
+}
+
+.tp-input, .tp-select {
+  width: 100%;
+  padding: 6px 8px;
+  background: #0f192b;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.tp-btn-primary {
+  width: 100%;
+  background: #1d4ed8;
+  color: #ffffff;
+  border: 1px solid #3b82f6;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.tp-btn-primary:hover {
+  background: #2563eb;
+}
+
+/* v3 additions */
+#tp-fab{position:fixed;right:20px;bottom:80px;z-index:999999;background:#194073;color:#fff;border-radius:8px;padding:10px 12px;font:700 13px sans-serif;cursor:pointer;box-shadow:0 4px 10px rgba(0,0,0,.4)}
+.tp-in{width:100%;box-sizing:border-box;background:#0f192b;color:#fff;border:1px solid #2d5a9e;border-radius:4px;padding:5px 6px;margin-top:4px;font-size:12px}
+.tp-q{display:block;margin:6px 0;font-size:12px;color:#e2e8f0}
+.tp-muted{color:#94a3b8;font-size:11px;line-height:1.4}
+.tp-err{color:#fca5a5;font-size:11px;margin:4px 0}
+.tp-row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px solid #1e3250;font-size:12px;color:#e2e8f0}
+.tp-reason{margin-top:6px;padding:6px 8px;background:#0f192b;border-radius:4px}
+.tp-msg{color:#e2e8f0;font-size:12px;margin-top:2px;white-space:pre-wrap}
+.tp-why{color:#94a3b8;font-size:10px;margin-top:2px}
+.tp-foot{padding:6px 10px;border-top:1px solid #233b5c;display:flex;gap:8px;align-items:center}
+
+/* v3.9.8 movable & language modal */
+#tp-fab { touch-action: none; user-select: none; }
+.tp-header { cursor: grab; touch-action: none; }
+.tp-header:active { cursor: grabbing; }
+.tp-lang-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(7, 13, 24, 0.92);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+.tp-lang-box {
+  background: #142338;
+  border: 1px solid #3b82f6;
+  border-radius: 10px;
+  padding: 16px;
+  width: 100%;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.7);
+  text-align: center;
+}
+.tp-lang-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+.tp-lang-choice {
+  background: #1e3a5f;
+  color: #fff;
+  border: 1px solid #60a5fa;
+  border-radius: 8px;
+  padding: 10px 8px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tp-lang-choice:hover {
+  background: #2563eb;
+}
+
+/* v3.18.0 NID Tamper / Forensics warning badge */
+.tp-warn {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 4px;
+  padding: 4px 7px;
+  font-size: 11px;
+  margin: 4px 0;
+}

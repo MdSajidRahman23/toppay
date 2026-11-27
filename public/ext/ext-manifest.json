@@ -1,0 +1,127 @@
+{
+ "name": "TopPay Smart Decision Assistant",
+ "version": "3.18.3",
+ "generated": "2026-11-27T11:40:05",
+ "files": [
+  {
+   "path": "README.md",
+   "size": 3946,
+   "sha256": "2ca4eb4166c486700980e0e3fcb71730c7891bc813314ea1f79b8d7fd0942c38"
+  },
+  {
+   "path": "alert-bg.js",
+   "size": 1688,
+   "sha256": "aa3e6735ba9940a697e88ec015b27cca9d3a89c21ae05b1117a0b1b0fd0b053a"
+  },
+  {
+   "path": "alert-offscreen.html",
+   "size": 84,
+   "sha256": "60bb24e69c683a69437ed3bddb9f278ea583a317f84dab2712810bcf3a51a539"
+  },
+  {
+   "path": "alert-offscreen.js",
+   "size": 1020,
+   "sha256": "071b1de9210a09e112ad7c6e043878f19c58a985c318841f89342b248382dd31"
+  },
+  {
+   "path": "alert-popup.html",
+   "size": 1037,
+   "sha256": "ade97c68dff5059dd0d075174190660a84c45fdb03317ad01ab4403ae813bb72"
+  },
+  {
+   "path": "alert-popup.js",
+   "size": 876,
+   "sha256": "ca7870b5114e4bf8778cb5b5e30e1e7dd9977a4d3a87ccf5a52507069ad1fb07"
+  },
+  {
+   "path": "alert.js",
+   "size": 6577,
+   "sha256": "6c8b4da919703c4e993ad5f15f097ee246e9d96bd51bbe2de08231cb585cc2b3"
+  },
+  {
+   "path": "background.js",
+   "size": 7764,
+   "sha256": "ca0e619a2d43c940ef7df942d5ac8ef50fd0803f5e12c466e1974ac0b7b915d5"
+  },
+  {
+   "path": "content.js",
+   "size": 101765,
+   "sha256": "783243154b0cd03f94de8667226f0aff2e93da1f120d331a33b7e8a924067711"
+  },
+  {
+   "path": "core.js",
+   "size": 29000,
+   "sha256": "98b18ba1b9a6b6d23f4cfc6ece621836c9d03755ab4de661618cf02095edafa4"
+  },
+  {
+   "path": "engine-local.js",
+   "size": 81183,
+   "sha256": "9b4aee8846b31ad9f95bc63c7278efab8222c87d3f525f7431d6c4aaaeeb964e"
+  },
+  {
+   "path": "injected.js",
+   "size": 9521,
+   "sha256": "d8aad35fbc3e721201439f958745b1fb4d470fdba40ceb677ea70ea10ffeef06"
+  },
+  {
+   "path": "manifest.json",
+   "size": 1793,
+   "sha256": "71702561ebfd493b09ec2a977ab817d376ed7cb207ad4e8f103160487b7b6add"
+  },
+  {
+   "path": "ocr.html",
+   "size": 284,
+   "sha256": "88fa7a3a8db383f0874857bb18f33cfa68bba20f423730c4a4d6d1877354595b"
+  },
+  {
+   "path": "ocr.js",
+   "size": 28749,
+   "sha256": "cf0cc272b85a45e829b2f2c00d4bf9d6862646b5b952b8ea4763e0c48eeeec5d"
+  },
+  {
+   "path": "styles.css",
+   "size": 6088,
+   "sha256": "8c9a81b68e3ee11c206e4405c41e3efb7e6f8a1a5aefacecf5d1e15d5f6669b8"
+  },
+  {
+   "path": "upgrade.html",
+   "size": 1959,
+   "sha256": "cc543bd48e46d37c6aad5f176faeeec1d42e73d8eca6d536e5e2fef2bbbc0e3a"
+  },
+  {
+   "path": "upgrade.js",
+   "size": 10086,
+   "sha256": "2200cccadb998af2010ff275a055966a9b35e055de23989364f2c73d5af4f2ae"
+  },
+  {
+   "path": "icons/icon128.png",
+   "size": 5437,
+   "sha256": "95ee51e5ac2102d976a5212c8ea0d53bfad04d666361d1d5b32cf3a160084082"
+  },
+  {
+   "path": "icons/icon16.png",
+   "size": 641,
+   "sha256": "6cf3e77b1b0d924a98d4c15c3b5c79a60ef474f457638882fb7b9be537a4fb62"
+  },
+  {
+   "path": "icons/icon32.png",
+   "size": 1329,
+   "sha256": "c65a1a381650976426a7149a441f50cb537a226f70a9bc8f6afcada845ad159f"
+  },
+  {
+   "path": "icons/icon48.png",
+   "size": 2101,
+   "sha256": "8b279db5c52057e399f9c7a2c6b5adbbaf87be1309532e7ed1d9c35ad72d5cff"
+  },
+  {
+   "path": "lib/statement-core.js",
+   "size": 55130,
+   "sha256": "44aabeea6c30a13eeab1ff42796b3e0247f7cece28fdef2a35d45d8d9eb5eb70"
+  },
+  {
+   "path": "lib/statement-pdf.js",
+   "size": 5524,
+   "sha256": "948668afb7dd80262d2786fd25622c90b0d51c90b6c94423161def4b9c60e114"
+  }
+ ]
+}
